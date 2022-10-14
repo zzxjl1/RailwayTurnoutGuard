@@ -7,7 +7,6 @@
 4. 通过电流曲线计算得出功率瓦数曲线
 """
 import random
-from unittest import result
 import matplotlib.pyplot as plt
 import scipy.interpolate
 import numpy as np
@@ -99,26 +98,45 @@ def generate_normal_current(durations, values, phase_name="A"):
 
 
 def generate_durations_and_values(type="normal"):
+    """
+    产生各阶段的持续时间和最终、过程值，将通过这些值确定关键点
+    以下内容基于论文中的经验总结
+    """
     durations = {
+        #######  Stage 1 starts  ########
+        # 开始延迟，开始时电流为0，需要等待一段时间才开始上升
         "start_delay": random_float(0.1, 0.25),
+        # 电机电流上升到最大值的时间（启动时的瞬间）
         "rise_to_max_duration": random_float(0.05, 0.2),
+        # 电机从瞬间大电流下降到正常的时间
         "down_to_normal_duration": random_float(0.05, 0.1),
+
+        #######  Stage 2 starts  ########
+        # 很长一段平台期，电流几乎保持不变
         "stage2_stable_duration": random_float(3, 5),
+        # 结束时电流下降过程的用时
         "stage2_decrease_duration": random_float(0, 0.1),
+
+        #######  Stage 3 starts  ########
+        # 也有一段时间电流几乎保持不变，但比stage 2短一些
         "stage3_stable_duration": random_float(1.5, 2.5),
+        # 结束时电流下降过程的用时
         "stage3_decrease_duration": random_float(0, 0.1)
     }
     values = {
-        "stage1_max_val": random_float(4, 6),
+        "stage1_max_val": random_float(4, 6),  # 电机启动电流峰值
+        # stage 1最终值，也就是stage 2长时间稳定平台期的电流值，请结合图看
         "stage1_final_val": random_float(1, 1.5),
+        # stage 2最终值，stage 3平台期的电流值，请结合图看
         "stage2_final_val": random_float(0.5, 0.9),
     }
-    if type == "normal":
+    if type == "normal":  # 正常状态
         return durations, values
-    elif type == "H1":
+    elif type == "H1":  # H1故障（论文中的hidden fault #1）
         durations["stage2_stable_duration"] = random_float(12, 15)
         return durations, values
-    raise Exception("type error")
+
+    raise Exception("type error")  # 异常输入
 
 
 def generate_current_series(type="normal", show_plt=False):

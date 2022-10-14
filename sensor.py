@@ -12,6 +12,7 @@ import scipy.interpolate
 import numpy as np
 
 SAMPLE_RATE = 60  # 采样率 per second
+CURRENT_LIMIT = 6  # 单项最大电流保护阈值
 
 
 def random_float(a, b, n=2):
@@ -124,7 +125,7 @@ def generate_durations_and_values(type="normal"):
         "stage3_decrease_duration": random_float(0, 0.1)
     }
     values = {
-        "stage1_max_val": random_float(4, 6),  # 电机启动电流峰值
+        "stage1_max_val": random_float(4.5, CURRENT_LIMIT-0.5),  # 电机启动电流峰值
         # stage 1最终值，也就是stage 2长时间稳定平台期的电流值，请结合图看
         "stage1_final_val": random_float(1, 1.5),
         # stage 2最终值，stage 3平台期的电流值，请结合图看

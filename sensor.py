@@ -12,7 +12,9 @@ import scipy.interpolate
 import numpy as np
 
 SAMPLE_RATE = 60  # 采样率 per second
-CURRENT_LIMIT = 6  # 单项最大电流保护阈值
+RUNNING_CURRENT_LIMIT = 2  # 单项最大电流保护阈值
+SUPPORTED_SAMPLE_TYPES = ["normal", "H1", "H2", "H3",
+                          "H4", "H5", "H6", "F1", "F2", "F3", "F4", "F5"]
 
 
 def random_float(a, b, n=2):
@@ -46,17 +48,15 @@ def generate_stage1(durations, values):
     return duration
 
 
-def generate_stage2(durations, values, start_timestamp, is_phase_c=False):
+def generate_stage2(durations, values, start_timestamp, is_phase_down=False):
     """产生第二阶段的关键点"""
-    if is_phase_c:
-        values["stage2_final_val"] = 0
 
     duration = durations["stage2_stable_duration"] + \
         durations["stage2_decrease_duration"]
     key_points = [(start_timestamp, values["stage1_final_val"]),
                   (start_timestamp +
                    durations["stage2_stable_duration"], values["stage1_final_val"]),
-                  (start_timestamp+duration, values["stage2_final_val"])]
+                  (start_timestamp+duration, values["stage2_final_val"] if not is_phase_down else 0)]
     # print(key_points)
     global result
     result += key_points[1:]
@@ -64,13 +64,14 @@ def generate_stage2(durations, values, start_timestamp, is_phase_c=False):
     return duration
 
 
-def generate_stage3(durations, values,  start_timestamp):
+def generate_stage3(durations, values,  start_timestamp, is_phase_down=False):
     """产生第三阶段的关键点"""
+    stage2_final_val = values["stage2_final_val"] if not is_phase_down else 0
     duration = durations["stage3_stable_duration"] + \
         durations["stage3_decrease_duration"]
-    key_points = [(start_timestamp, values["stage2_final_val"]),
+    key_points = [(start_timestamp, stage2_final_val),
                   (start_timestamp +
-                   durations["stage3_stable_duration"], values["stage2_final_val"]),
+                   durations["stage3_stable_duration"], stage2_final_val),
                   (start_timestamp+duration, 0)]
     # print(key_points)
     global result
@@ -79,30 +80,82 @@ def generate_stage3(durations, values,  start_timestamp):
     return duration
 
 
-def generate_normal_current(durations, values, phase_name="A"):
+def generate_normal_current(durations, values, phase_name, type="normal"):
     """产生电流曲线（正常状态）"""
     global result
     result = []
+    segmentations = []
     time_elipsed = 0
+    is_phase_down = (
+        phase_name == values["phase_down"]) if type != "F4" else False
     duration = generate_stage1(durations, values)
     time_elipsed += duration
+    segmentations.append(time_elipsed)
+
     duration = generate_stage2(
-        durations, values, time_elipsed, is_phase_c=(phase_name == "C"))
+        durations, values, time_elipsed, is_phase_down)
     time_elipsed += duration
-    duration = generate_stage3(durations, values, time_elipsed)
+    segmentations.append(time_elipsed)
+
+    duration = generate_stage3(durations, values, time_elipsed, is_phase_down)
     time_elipsed += duration
+
+    values["segmentations"][phase_name] = segmentations
 
     print(f"phase {phase_name} keypoints: ", result)
     result = interpolate(*tansform_to_plt(result))
     #draw_line(*result, "", "Current(A)")
+
+    x, y = map(lambda x: list(x), result)
+
+    def find_nearest(array, value):
+        array = np.asarray(array)
+        idx = (np.abs(array - value)).argmin()
+        return idx
+    fault_features = {
+        "H2": {
+            "start": find_nearest(x, segmentations[0])+1,
+            "end": find_nearest(x, segmentations[1]),
+            "noise_level": 0.3,
+            "percentage": 0.4
+        },
+        "H4": {
+            "start": find_nearest(x, segmentations[0])+1,
+            "end": find_nearest(x, segmentations[1]),
+            "noise_level": (-1, 1),
+            "percentage": 0.01},
+        "H5": {
+            "start": find_nearest(x, segmentations[1])+1,
+            "end": len(x)-1,
+            "noise_level": 0.3,
+            "percentage": 0.4},
+    }
+
+    if type in fault_features:
+        fault_feature = fault_features[type]
+        start, end = fault_feature["start"], fault_feature["end"]
+        x_seg, y_seg = add_noise(
+            x[start:end], y[start:end], noise_level=fault_feature["noise_level"], percentage=fault_feature["percentage"])
+        result = x[:start] + x_seg + x[end:], y[:start] + y_seg + y[end:]
+
+    if type == "F1":
+        if phase_name == values["phase_down"]:
+            return x, np.zeros(len(y))
+        result = add_noise(*result, noise_level=0.01, percentage=0.1)
+    else:
+        result = add_noise(*result)
     return result
 
 
 def generate_durations_and_values(type="normal"):
     """
     产生各阶段的持续时间和最终、过程值，将通过这些值确定关键点
+    支持各种故障模拟
     以下内容基于论文中的经验总结
     """
+    if type not in SUPPORTED_SAMPLE_TYPES:
+        raise Exception("type error")  # 异常输入
+
     durations = {
         #######  Stage 1 starts  ########
         # 开始延迟，开始时电流为0，需要等待一段时间才开始上升
@@ -125,31 +178,87 @@ def generate_durations_and_values(type="normal"):
         "stage3_decrease_duration": random_float(0, 0.1)
     }
     values = {
-        "stage1_max_val": random_float(4.5, CURRENT_LIMIT-0.5),  # 电机启动电流峰值
+        "stage1_max_val": random_float(4.5, 5.5),  # 电机启动电流峰值
         # stage 1最终值，也就是stage 2长时间稳定平台期的电流值，请结合图看
-        "stage1_final_val": random_float(1, 1.5),
+        "stage1_final_val": random_float(1, RUNNING_CURRENT_LIMIT-0.5),
         # stage 2最终值，stage 3平台期的电流值，请结合图看
         "stage2_final_val": random_float(0.5, 0.9),
+        "segmentations": {"A": [], "B": [], "C": []},
+        "phase_down": random.choice(["A", "B", "C"])
     }
+    print("durations: ", durations)
+    print("values: ", values)
     if type == "normal":  # 正常状态
-        return durations, values
+        pass
     elif type == "H1":  # H1故障（论文中的hidden fault #1）
+        """Overlong duration in Stage 2"""
         durations["stage2_stable_duration"] = random_float(12, 15)
-        return durations, values
+    elif type == "H2":
+        """Abnormal fluctuations of the current series"""
+        pass  # 模拟此故障无需修改关键点
+    elif type == "H3":
+        """"Current exceeds limit in Stage 2"""
+        values["stage1_final_val"] = random_float(
+            RUNNING_CURRENT_LIMIT, RUNNING_CURRENT_LIMIT+1)
+    elif type == "H4":
+        """
+        Abrupt change of current in Stage 2
+        需要在曲线生成后修改
+        """
+        pass
+    elif type == "H5":
+        """Overlong duration in Stage 3"""
+        durations["stage3_stable_duration"] = random_float(3.5, 5)
+    elif type == "H6":
+        """Double or half current value in Stage 3"""
+        values["stage2_final_val"] = random_float(
+            0.5, 0.9)*random.choice([0.5, 2])
+    elif type == "F1":
+        """Current and power staying at a low level"""
+        temp = random_float(0.3, 0.5)
+        values["stage1_max_val"] = temp
+        values["stage1_final_val"] = temp
+        values["stage2_final_val"] = temp
+        durations["stage2_stable_duration"] = random_float(12, 15)
+        durations["stage3_stable_duration"] = 0
+    elif type == "F2":
+        """Current and power are always zero"""
+        values["stage1_max_val"] = 0
+        values["stage1_final_val"] = 0
+        values["stage2_final_val"] = 0
+        durations["start_delay"] = random_float(0.8, 1)
+        durations["stage2_stable_duration"] = 0
+        durations["stage2_decrease_duration"] = 0
+        durations["stage3_stable_duration"] = 0
+        durations["stage3_decrease_duration"] = 0
+    elif type == "F3":
+        """Current and power drop to zero in Stage 2"""
+        values["stage2_final_val"] = 0
+        durations["stage2_stable_duration"] = random_float(0.5, 0.8)
+        durations["stage3_stable_duration"] = random_float(0.3, 0.5)
+        durations["stage3_decrease_duration"] = 0
+    elif type == "F4":
+        """Current and power rise in Stage 2"""
+        durations["stage3_stable_duration"] = random_float(18, 22)
+        values["stage2_final_val"] = values["stage1_final_val"] + \
+            random_float(0.3, 0.6)
+    elif type == "F5":
+        """Current and power drop to zero in Stage 3"""
+        values["stage2_final_val"] = 0
 
-    raise Exception("type error")  # 异常输入
+    return durations, values
 
 
 def generate_current_series(type="normal", show_plt=False):
-    """产生三相电流曲线（正常状态）"""
+    """产生三相电流曲线"""
     durations, values = generate_durations_and_values(type)
     current_results = {}
     for phase in ["A", "B", "C"]:
-        result = generate_normal_current(durations, values, phase)
+        result = generate_normal_current(durations, values, phase, type)
         current_results[phase] = result
         plt.plot(*result, label=f"Phase {phase}")
     if show_plt:
-        plt.title("Normal Current Series")
+        plt.title(f"{type.capitalize()} Current Series")
         plt.xlabel("Time(s)")
         plt.ylabel("Current(A)")
         plt.show()
@@ -160,6 +269,7 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
     """
     产生瓦数曲线，采用直接计算的方式，需传入三项电流曲线
     P (kW) = I (Amps) × V (Volts) × PF(功率因数) × 1.732
+    注意：这里是因为论文出现了图才实现此曲线，实际上算法中并没有用到
     """
     x, _ = current_series['A']
     length = len(x)
@@ -177,9 +287,20 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
     return x, result
 
 
-def add_noise(x, y, noise_level=0.015):
+def add_noise(x, y, noise_level=0.05, percentage=0.3):
     """加入抖动噪声"""
-    return x, y+np.random.normal(0, noise_level, len(y))
+    if isinstance(noise_level, float):
+        noice_range = (-noise_level/2, noise_level/2)
+    elif isinstance(noise_level, tuple):
+        noice_range = noise_level
+    n = [random_float(*noice_range) for _ in range(len(x))]
+    for i in range(len(x)):
+        if random.random() > percentage:  # 按概率加入噪声
+            continue
+        if y[i] == 0:  # 值为0的点不加噪声
+            continue
+        y[i] += n[i]
+    return correct_curve(x, y)
 
 
 def correct_curve(x, y):
@@ -193,7 +314,6 @@ def interpolate(x, y):
     time_elipsed = max(x)-min(x)
     x = np.linspace(min(x), max(x), round(time_elipsed*SAMPLE_RATE/2))
     y = interper(x)
-    x, y = add_noise(x, y)
 
     x_new = np.linspace(min(x), max(x), round(time_elipsed*SAMPLE_RATE))
     interper = scipy.interpolate.interp1d(x, y, kind='cubic')  # 三次就是cubic
@@ -213,5 +333,6 @@ def draw_line(x, y, title="", y_label=""):
 
 
 if __name__ == "__main__":
-    current_series = generate_current_series("normal", show_plt=True)
+    for sample_type in SUPPORTED_SAMPLE_TYPES:
+        current_series = generate_current_series(sample_type, show_plt=True)
     #generate_power_series(current_series, show_plt=True)

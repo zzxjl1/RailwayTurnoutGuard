@@ -6,7 +6,6 @@
 3. 通过关键点插值，产生符合采样率的平滑三项电流曲线
 4. 通过电流曲线计算得出功率瓦数曲线
 """
-from cProfile import label
 import random
 import matplotlib.pyplot as plt
 import scipy.interpolate

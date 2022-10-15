@@ -186,8 +186,8 @@ def generate_durations_and_values(type="normal"):
         "segmentations": {"A": [], "B": [], "C": []},
         "phase_down": random.choice(["A", "B", "C"])
     }
-    print("durations: ", durations)
-    print("values: ", values)
+    #print("durations: ", durations)
+    #print("values: ", values)
     if type == "normal":  # 正常状态
         pass
     elif type == "H1":  # H1故障（论文中的hidden fault #1）
@@ -257,6 +257,8 @@ def generate_current_series(type="normal", show_plt=False):
         result = generate_normal_current(durations, values, phase, type)
         current_results[phase] = result
         plt.plot(*result, label=f"Phase {phase}")
+    print("durations: ", durations)
+    print("values: ", values)
     if show_plt:
         plt.title(f"{type.capitalize()} Current Series")
         plt.xlabel("Time(s)")

@@ -308,8 +308,9 @@ def generate_sample(type="normal", show_plt=False):
         ax1.set_ylabel("Current(A)")
         ax2.set_ylabel('Power(W)')
 
-        ax1.set_ylim(bottom=0.)
-        ax2.set_ylim(bottom=0.)
+        ax1.set_ylim(bottom=0, top=5)
+        ax2.set_ylim(bottom=0, top=5000)
+
         plt.xlim(0, None)
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()

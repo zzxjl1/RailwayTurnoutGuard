@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 import scipy.interpolate
 import numpy as np
 
+
 SAMPLE_RATE = 60  # 采样率 per second
 RUNNING_CURRENT_LIMIT = 2  # 单项最大电流保护阈值
 SUPPORTED_SAMPLE_TYPES = ["normal", "H1", "H2", "H3",
@@ -296,7 +297,7 @@ def generate_sample(type="normal", show_plt=False):
     result = current_series
     result["power"] = power_series
     if show_plt:
-        fig = plt.figure()
+        fig = plt.figure(dpi=150, figsize=(9, 2))
         ax1 = fig.subplots()
         ax2 = ax1.twinx()
         for phase in ["A", "B", "C"]:
@@ -363,7 +364,7 @@ def draw_line(x, y, title="", y_label=""):
 
 
 if __name__ == "__main__":
-    for sample_type in ["H1"]:
+    for sample_type in SUPPORTED_SAMPLE_TYPES:
         #current_series = generate_current_series(sample_type, show_plt=True)
         #generate_power_series(current_series, show_plt=True)
         generate_sample(sample_type, show_plt=True)

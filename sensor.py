@@ -6,6 +6,7 @@
 3. 通过关键点插值，产生符合采样率的平滑三项电流曲线
 4. 通过电流曲线计算得出功率瓦数曲线
 """
+from cProfile import label
 import random
 import matplotlib.pyplot as plt
 import scipy.interpolate
@@ -256,7 +257,8 @@ def generate_current_series(type="normal", show_plt=False):
     for phase in ["A", "B", "C"]:
         result = generate_normal_current(durations, values, phase, type)
         current_results[phase] = result
-        plt.plot(*result, label=f"Phase {phase}")
+        if show_plt:
+            plt.plot(*result, label=f"Phase {phase}")
     print("durations: ", durations)
     print("values: ", values)
     if show_plt:
@@ -271,7 +273,6 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
     """
     产生瓦数曲线，采用直接计算的方式，需传入三项电流曲线
     P (kW) = I (Amps) × V (Volts) × PF(功率因数) × 1.732
-    注意：这里是因为论文出现了图才实现此曲线，实际上算法中并没有用到
     """
     x, _ = current_series['A']
     length = len(x)
@@ -282,11 +283,38 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
             result[i] += current[i]*220*power_factor*1.732
     if show_plt:
         plt.plot(x, result)
-        plt.title("Normal Power Series")
+        plt.title("Power Series")
         plt.xlabel("Time(s)")
         plt.ylabel("Power(W)")
         plt.show()
     return x, result
+
+
+def generate_sample(type="normal", show_plt=False):
+    current_series = generate_current_series(type, False)
+    power_series = generate_power_series(current_series, show_plt=False)
+    result = current_series
+    result["power"] = power_series
+    if show_plt:
+        fig = plt.figure()
+        ax1 = fig.subplots()
+        ax2 = ax1.twinx()
+        for phase in ["A", "B", "C"]:
+            ax1.plot(*result[phase], label=f"Phase {phase}")
+        ax2.plot(*result["power"], 'b--', label="Power")
+        plt.title(f"Sample {type.capitalize()}")
+        ax1.set_xlabel("Time(s)")
+        ax1.set_ylabel("Current(A)")
+        ax2.set_ylabel('Power(W)')
+
+        ax1.set_ylim(bottom=0.)
+        ax2.set_ylim(bottom=0.)
+        plt.xlim(0, None)
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        plt.legend(lines + lines2, labels + labels2, loc='best')
+        plt.show()
+    return result
 
 
 def add_noise(x, y, noise_level=0.05, percentage=0.3):
@@ -335,6 +363,7 @@ def draw_line(x, y, title="", y_label=""):
 
 
 if __name__ == "__main__":
-    for sample_type in SUPPORTED_SAMPLE_TYPES:
-        current_series = generate_current_series(sample_type, show_plt=True)
-    #generate_power_series(current_series, show_plt=True)
+    for sample_type in ["H1"]:
+        #current_series = generate_current_series(sample_type, show_plt=True)
+        #generate_power_series(current_series, show_plt=True)
+        generate_sample(sample_type, show_plt=True)

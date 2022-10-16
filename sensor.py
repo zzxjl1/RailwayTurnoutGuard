@@ -128,7 +128,7 @@ def generate_normal_current(durations, values, phase_name, type="normal"):
             "percentage": 0.01},
         "H5": {
             "start": find_nearest(x, segmentations[1])+1,
-            "end": len(x)-1,
+            "end": len(x),
             "noise_level": 0.5,
             "percentage": 0.2},
     }

@@ -1,3 +1,4 @@
+from unittest import result
 from matplotlib import pyplot as plt
 from sklearn.ensemble import IsolationForest
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, add_noise, generate_sample
@@ -5,7 +6,7 @@ from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
 SEGMENT_POINT_1_THRESHOLD = 30
-END_BLACKOUT_THRESHOLD = 0.25  # 计算分界点2时屏蔽最后0.25秒的数据，因为剧烈波动会干扰算法
+END_BLACKOUT_THRESHOLD = 0.3  # 计算分界点2时屏蔽最后0.3秒的数据，因为剧烈波动会干扰算法
 
 
 def get_d(s, smooth=True, show_plt=False, name=""):
@@ -61,17 +62,13 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
     return index, result
 
 
-def find_segmentation_point_2(x, y, segmentation_point_1_index, type="normal"):
+def find_segmentation_point_2(x, y, segmentation_point_1_index):
     """寻找第二个分段点（between stage 2 and stage 3）"""
     end_blackout_length = round(
         SAMPLE_RATE*END_BLACKOUT_THRESHOLD)
 
-    if type == "F4":
-        x, y = x[segmentation_point_1_index:],\
-            y[segmentation_point_1_index:]
-    else:
-        x, y = x[segmentation_point_1_index:-end_blackout_length],\
-            y[segmentation_point_1_index:-end_blackout_length]
+    x, y = x[segmentation_point_1_index:-end_blackout_length],\
+        y[segmentation_point_1_index:-end_blackout_length]
     peak_idx, properties = find_peaks(y, prominence=0)
     prominences = properties["prominences"]
     if len(peak_idx) == 0 or len(prominences) == 0:
@@ -96,17 +93,17 @@ def draw_line(x=None, y=None, title="", y_label="", is_dot=False):
     plt.show()
 
 
-def calc_segmentation_points(series, type="normal", show_plt=False):
-
+def calc_segmentation_points_single_series(series, name="", show_plt=False):
+    """计算单条曲线的分段点"""
     x, y = series
 
-    d1_result = get_d(series, smooth=True, show_plt=False, name=f"{type} d1")
+    d1_result = get_d(series, smooth=True, show_plt=False, name=f"{name} d1")
     d2_result = get_d(d1_result, smooth=True,
-                      show_plt=False, name=f"{type} d2")
+                      show_plt=False, name=f"{name} d2")
     segmentation_point_1_index, segmentation_point_1_x = find_segmentation_point_1(
         *d2_result)
     _, segmentation_point_2_x = find_segmentation_point_2(
-        *d2_result, segmentation_point_1_index, type)
+        *d2_result, segmentation_point_1_index)
     if show_plt:
         fig = plt.figure(dpi=150, figsize=(9, 2))
         ax1 = fig.subplots()
@@ -120,7 +117,7 @@ def calc_segmentation_points(series, type="normal", show_plt=False):
             plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
         if segmentation_point_2_x is not None:
             plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
-        plt.title(f"{type} final result")
+        plt.title(f"{name} final result")
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         plt.legend(lines + lines2, labels + labels2, loc='best')
@@ -129,10 +126,30 @@ def calc_segmentation_points(series, type="normal", show_plt=False):
     return segmentation_point_1_x, segmentation_point_2_x
 
 
+def calc_segmentation_points(sample):
+    """计算整个样本（4条线）的分段点"""
+    result = {}
+    for name, series in sample.items():
+        if name == "power":  # power曲线做分段依据，因为感觉会起反作用
+            continue
+        result[name] = calc_segmentation_points_single_series(
+            series, name=name, show_plt=False)
+    print(result)
+    pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]
+    # pt1和pt2中出现次数最多的值
+    final_result = max(set(pt1), key=pt1.count), max(set(pt2), key=pt2.count)
+    print("final result: ", final_result)
+    return final_result
+
+
 if __name__ == "__main__":
+    calc_segmentation_points(generate_sample())
+    """
     for type in SUPPORTED_SAMPLE_TYPES:
         sample = generate_sample(type)
         print(sample.keys())
         name = "A"
         series = sample[name]
-        calc_segmentation_points(series, type, show_plt=True)
+        calc_segmentation_points_single_series(
+            series, name=f"{type} {name}", show_plt=True)
+    """

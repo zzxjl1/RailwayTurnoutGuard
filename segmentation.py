@@ -96,14 +96,6 @@ def draw_line(x=None, y=None, title="", y_label="", is_dot=False):
     plt.show()
 
 
-def test(type):
-    sample = generate_sample(type)
-    print(sample.keys())
-    name = "A"
-    series = sample[name]
-    calc_segmentation_points(series, type, show_plt=True)
-
-
 def calc_segmentation_points(series, type="normal", show_plt=False):
 
     x, y = series
@@ -138,5 +130,9 @@ def calc_segmentation_points(series, type="normal", show_plt=False):
 
 
 if __name__ == "__main__":
-    for sample_type in SUPPORTED_SAMPLE_TYPES:
-        test(sample_type)
+    for type in SUPPORTED_SAMPLE_TYPES:
+        sample = generate_sample(type)
+        print(sample.keys())
+        name = "A"
+        series = sample[name]
+        calc_segmentation_points(series, type, show_plt=True)

@@ -16,7 +16,7 @@ def get_d(s, smooth=True, show_plt=False, name=""):
     """
     x, y = s
     if smooth:
-        y = savgol_filter(y, window_length=9, polyorder=3)
+        y = savgol_filter(y, window_length=7, polyorder=3)
         y = savgol_filter(y, window_length=5, polyorder=1)
     if show_plt:
         plt.plot(x, y, label='original values')
@@ -54,7 +54,7 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
         threshold -= 1
         print("applying adaptive threshhold: ", threshold)
         return find_segmentation_point_1(x, y, threshold)
-    print("peak_point_x: ", np.array(x)[peak_idx])
+    print("peak_point_available: ", np.array(x)[peak_idx])
     index = peak_idx[1]
     result = x[index]
     print("segmentation point 1: ", result)
@@ -77,7 +77,7 @@ def find_segmentation_point_2(x, y, segmentation_point_1_index, type="normal"):
     if len(peak_idx) == 0 or len(prominences) == 0:
         print("segmentation point 2 not found")
         return None, None
-    print("peak_point_x: ", np.array(x)[peak_idx])
+    print("peak_point_available: ", np.array(x)[peak_idx])
     index = np.argmax(prominences)
     result = x[peak_idx[index]]
     print("segmentation point 2: ", result)
@@ -96,11 +96,16 @@ def draw_line(x=None, y=None, title="", y_label="", is_dot=False):
     plt.show()
 
 
-def test(type="normal"):
-    sample = generate_sample(type, show_plt=False)
+def test(type):
+    sample = generate_sample(type)
     print(sample.keys())
     name = "A"
     series = sample[name]
+    calc_segmentation_points(series, type, show_plt=True)
+
+
+def calc_segmentation_points(series, type="normal", show_plt=False):
+
     x, y = series
 
     d1_result = get_d(series, smooth=True, show_plt=False, name=f"{type} d1")
@@ -110,15 +115,26 @@ def test(type="normal"):
         *d2_result)
     _, segmentation_point_2_x = find_segmentation_point_2(
         *d2_result, segmentation_point_1_index, type)
-    #plt.plot(*d2_result, label="d2")
-    plt.plot(x, y, label="y")
-    # 画竖线
-    if segmentation_point_1_x is not None:
-        plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
-    if segmentation_point_2_x is not None:
-        plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
-    plt.title(f"{type} final result")
-    plt.show()
+    if show_plt:
+        fig = plt.figure(dpi=150, figsize=(9, 2))
+        ax1 = fig.subplots()
+        ax2 = ax1.twinx()
+        #ax2.plot(*d1_result, label="d1")
+        ax2.plot(*d2_result, label="d2", color="red",
+                 linewidth=1, alpha=0.2)
+        ax1.plot(x, y, label="y", color="blue")
+        # 画竖线
+        if segmentation_point_1_x is not None:
+            plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
+        if segmentation_point_2_x is not None:
+            plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
+        plt.title(f"{type} final result")
+        lines, labels = ax1.get_legend_handles_labels()
+        lines2, labels2 = ax2.get_legend_handles_labels()
+        plt.legend(lines + lines2, labels + labels2, loc='best')
+        plt.show()
+
+    return segmentation_point_1_x, segmentation_point_2_x
 
 
 if __name__ == "__main__":

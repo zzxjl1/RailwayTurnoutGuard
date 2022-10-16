@@ -136,7 +136,9 @@ def generate_normal_current(durations, values, phase_name, type="normal"):
         fault_feature = fault_features[type]
         start, end = fault_feature["start"], fault_feature["end"]
         x_seg, y_seg = add_noise(
-            x[start:end], y[start:end], noise_level=fault_feature["noise_level"], percentage=fault_feature["percentage"])
+            x[start:end], y[start:end],
+            noise_level=fault_feature["noise_level"],
+            percentage=fault_feature["percentage"])
         result = x[:start] + x_seg + x[end:], y[:start] + y_seg + y[end:]
 
     if type == "F1":

@@ -154,3 +154,8 @@ if __name__ == '__main__':
         x[TRANING_SET_LENGTH:], y[TRANING_SET_LENGTH:])
     train_dl, valid_dl = get_data(train_ds, valid_ds)
     fit(train_dl, valid_dl)
+
+
+"""
+TODO: 修复生成数据时的会有nan（见check那行）
+"""

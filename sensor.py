@@ -104,6 +104,7 @@ def generate_normal_current(durations, values, phase_name, type="normal"):
     values["segmentations"][phase_name] = segmentations
 
     print(f"phase {phase_name} keypoints: ", result)
+    print(f"phase {phase_name} time_elipsed: ", time_elipsed)
     result = interpolate(*tansform_to_plt(result))
     #draw_line(*result, "", "Current(A)")
 
@@ -118,18 +119,18 @@ def generate_normal_current(durations, values, phase_name, type="normal"):
             "start": find_nearest(x, segmentations[0])+1,
             "end": find_nearest(x, segmentations[1]),
             "noise_level": 0.3,
-            "percentage": 0.4
+            "percentage": 0.2
         },
         "H4": {
             "start": find_nearest(x, segmentations[0])+1,
             "end": find_nearest(x, segmentations[1]),
-            "noise_level": (-1, 1),
+            "noise_level": 0.7,
             "percentage": 0.01},
         "H5": {
             "start": find_nearest(x, segmentations[1])+1,
             "end": len(x)-1,
             "noise_level": 0.3,
-            "percentage": 0.4},
+            "percentage": 0.2},
     }
 
     if type in fault_features:

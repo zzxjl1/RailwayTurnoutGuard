@@ -1,13 +1,11 @@
-
-from cProfile import label
-from math import exp
 from matplotlib import pyplot as plt
 from sklearn.ensemble import IsolationForest
-from sensor import add_noise, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, add_noise, generate_sample
 from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
 SEGMENT_POINT_1_THRESHOLD = 30
+END_BLACKOUT_THRESHOLD = 0.25  # 计算分界点2时屏蔽最后0.25秒的数据，因为剧烈波动会干扰算法
 
 
 def get_d(s, smooth=True, show_plt=False, name=""):
@@ -17,9 +15,9 @@ def get_d(s, smooth=True, show_plt=False, name=""):
     k值：polyorder为对窗口内的数据点进行k阶多项式拟合，k的值需要小于window_length
     """
     x, y = s
-
-    y = savgol_filter(y, window_length=13, polyorder=3)
-    y = savgol_filter(y, window_length=5, polyorder=1)
+    if smooth:
+        y = savgol_filter(y, window_length=9, polyorder=3)
+        y = savgol_filter(y, window_length=5, polyorder=1)
     if show_plt:
         plt.plot(x, y, label='original values')
         plt.plot(x, y, label="curve after filtering")
@@ -49,23 +47,38 @@ def remove_duplicate_points(points):
 def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
     """寻找第一个分段点（between stage 1 and stage 2）"""
     peak_idx, _ = find_peaks(y, height=threshold)
-    print("peak_point_x: ", x[peak_idx])
+    if threshold == 0:
+        print("segmentation point 1 not found")
+        return None, None
     if len(peak_idx) < 2:
         threshold -= 1
         print("applying adaptive threshhold: ", threshold)
         return find_segmentation_point_1(x, y, threshold)
+    print("peak_point_x: ", np.array(x)[peak_idx])
     index = peak_idx[1]
     result = x[index]
     print("segmentation point 1: ", result)
     return index, result
 
 
-def find_segmentation_point_2(x, y, segmentation_point_1_index):
+def find_segmentation_point_2(x, y, segmentation_point_1_index, type="normal"):
     """寻找第二个分段点（between stage 2 and stage 3）"""
-    x, y = x[segmentation_point_1_index:], y[segmentation_point_1_index:]
+    end_blackout_length = round(
+        SAMPLE_RATE*END_BLACKOUT_THRESHOLD)
+
+    if type == "F4":
+        x, y = x[segmentation_point_1_index:],\
+            y[segmentation_point_1_index:]
+    else:
+        x, y = x[segmentation_point_1_index:-end_blackout_length],\
+            y[segmentation_point_1_index:-end_blackout_length]
     peak_idx, properties = find_peaks(y, prominence=0)
-    #print("peak_point_x: ", x[peak_idx])
-    index = np.argmax(properties["prominences"])
+    prominences = properties["prominences"]
+    if len(peak_idx) == 0 or len(prominences) == 0:
+        print("segmentation point 2 not found")
+        return None, None
+    print("peak_point_x: ", np.array(x)[peak_idx])
+    index = np.argmax(prominences)
     result = x[peak_idx[index]]
     print("segmentation point 2: ", result)
     return index, result
@@ -83,24 +96,31 @@ def draw_line(x=None, y=None, title="", y_label="", is_dot=False):
     plt.show()
 
 
-if __name__ == "__main__":
-
-    sample = generate_sample("normal", show_plt=False)
+def test(type="normal"):
+    sample = generate_sample(type, show_plt=False)
     print(sample.keys())
     name = "A"
     series = sample[name]
     x, y = series
 
-    d1_result = get_d(series, smooth=True, show_plt=False, name="d1")
-    d2_result = get_d(d1_result, smooth=False, show_plt=False, name="d2")
+    d1_result = get_d(series, smooth=True, show_plt=False, name=f"{type} d1")
+    d2_result = get_d(d1_result, smooth=True,
+                      show_plt=False, name=f"{type} d2")
     segmentation_point_1_index, segmentation_point_1_x = find_segmentation_point_1(
         *d2_result)
     _, segmentation_point_2_x = find_segmentation_point_2(
-        *d2_result, segmentation_point_1_index)
+        *d2_result, segmentation_point_1_index, type)
     #plt.plot(*d2_result, label="d2")
     plt.plot(x, y, label="y")
     # 画竖线
-    plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
-    plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
-    plt.title("final result")
+    if segmentation_point_1_x is not None:
+        plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
+    if segmentation_point_2_x is not None:
+        plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
+    plt.title(f"{type} final result")
     plt.show()
+
+
+if __name__ == "__main__":
+    for sample_type in SUPPORTED_SAMPLE_TYPES:
+        test(sample_type)

@@ -161,8 +161,11 @@ def generate_data(num):
 
 def predict(x):
     """预测"""
-    model = torch.load('model.pth')  # 加载模型
-    model.eval()
+    file_name = "model.pth"
+    assert os.path.exists(
+        file_name), "model not found, please run train() first!"
+    model = torch.load(file_name)  # 加载模型
+    model.eval()  # 验证模式
     with torch.no_grad():
         output = model(x)
         return output

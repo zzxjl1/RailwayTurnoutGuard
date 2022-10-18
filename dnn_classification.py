@@ -25,7 +25,7 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 10  # 训练数据集的轮次
+EPOCHS = 5  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 
 
@@ -131,8 +131,9 @@ def generate_data(num):
     if os.path.exists(filename):  # 如果缓存存在
         with open(filename, 'rb') as f:
             x, y = pickle.load(f)  # 读取
-            if len(x) == num:  # 如果数量符合要求
-                return x, y  # 直接返回
+            if len(x) >= num:  # 如果数量符合要求
+                # 返回前num个
+                return x[:num], y[:num]
             else:  # 否则重新生成
                 print('dataset cache not match, regenerate')
                 os.remove(filename)
@@ -159,8 +160,8 @@ def generate_data(num):
     return x, y
 
 
-def predict(x):
-    """预测"""
+def predict_raw_input(x):
+    """预测,输入为原始数据，直接入模型"""
     file_name = "model.pth"
     assert os.path.exists(
         file_name), "model not found, please run train() first!"
@@ -192,27 +193,46 @@ def train():
     torch.save(model, 'model.pth')  # 保存模型
 
 
+def parse_predict_result(result):
+    """解析预测结果"""
+    result_pretty = [round(i, 2) for i in result.tolist()[0]]
+    result_pretty = dict(zip(SUPPORTED_SAMPLE_TYPES, result_pretty))  # 让输出更美观
+    return result_pretty
+
+
+def get_label_from_result_pretty(result_pretty):
+    """从解析后的预测结果中获取标签"""
+    return max(result_pretty, key=result_pretty.get)
+
+
+def predict(sample):
+    """预测"""
+    features = list(calc_features(sample).values())  # 计算特征
+    features = torch.tensor([features], dtype=torch.float,
+                            requires_grad=True)  # 转换为tensor
+    result = predict_raw_input(features.to(DEVICE))  # 预测
+    result_pretty = parse_predict_result(result)  # 解析结果
+    return result_pretty
+
+
 def test(type="normal"):
     """生成type类型的样本，然后跑模型预测，最后返回是否正确"""
     sample = generate_sample(type)  # 生成样本
-    t = list(calc_features(sample).values())  # 计算特征
-    result = predict(torch.tensor([t], dtype=torch.float,
-                     requires_grad=True).to(DEVICE))  # 预测
-    result_pretty = [round(i, 2) for i in result.tolist()[0]]
-    result_pretty = dict(zip(SUPPORTED_SAMPLE_TYPES, result_pretty))  # 让输出更美观
-    print(result_pretty)
-    label = SUPPORTED_SAMPLE_TYPES[result.argmax().item()]  # 获取预测结果标签字符串
+    result = predict(sample)  # 预测
+    print(result)
+    label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串
+    print(label)
     return label == type  # 预测是否正确
 
 
 if __name__ == '__main__':
 
-    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
-    test_cycles = 200  # 测试次数
+    test_cycles = 500  # 测试次数
     test_results = []
     for _ in range(test_cycles):
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测
         test_results.append(t)  # 记录结果
     print("accuracy:", test_results.count(
-        True) / test_cycles)  # 输出正确率（99.5%左右）
+        True) / test_cycles)  # 输出正确率（94.5%左右）

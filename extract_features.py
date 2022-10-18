@@ -3,7 +3,7 @@
 """
 
 from segmentation import calc_segmentation_points, calc_segmentation_points_single_series
-from sensor import generate_sample
+from sensor import find_nearest, generate_sample
 from collections import OrderedDict
 
 
@@ -75,14 +75,14 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
 
     if segmentation_points_count == 2:  # 2个划分点
 
-        stage1_start, stage1_end = 0, x.index(
-            segmentation_points[0])+1  # 第一个stage的起始点和终止点索引
+        stage1_start, stage1_end = 0, find_nearest(x,
+                                                   segmentation_points[0])  # 第一个stage的起始点和终止点索引
         stage1 = calc_features_per_stage(
             x[stage1_start:stage1_end], y[stage1_start:stage1_end], series_name, "stage1")  # 计算第一个stage的特征
         features.update(stage1)  # 合并
 
-        stage2_start, stage2_end = stage1_end, x.index(
-            segmentation_points[1])+1  # 第二个stage的起始点和终止点索引
+        stage2_start, stage2_end = stage1_end, find_nearest(x,
+                                                            segmentation_points[1])  # 第二个stage的起始点和终止点索引
         stage2 = calc_features_per_stage(
             x[stage2_start:stage2_end], y[stage2_start:stage2_end], series_name, "stage2")  # 计算第二个stage的特征
         features.update(stage2)  # 合并
@@ -95,7 +95,7 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
     elif segmentation_points_count == 1:  # 1个划分点
 
         assert segmentation_points[0] is not None
-        stage1_start, stage1_end = 0, x.index(segmentation_points[0])+1
+        stage1_start, stage1_end = 0, find_nearest(x, segmentation_points[0])
         stage1 = calc_features_per_stage(
             x[stage1_start:stage1_end], y[stage1_start:stage1_end], series_name, "stage1")
         features.update(stage1)
@@ -127,6 +127,6 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
 
 if __name__ == "__main__":
 
-    sample = generate_sample("F1")
+    sample = generate_sample()
     t = calc_features(sample)
     print(t)

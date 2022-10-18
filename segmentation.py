@@ -142,7 +142,11 @@ def calc_segmentation_points(sample):
     # 做了一个融合，不同曲线算出的分段点可能不同，因此需要取最佳的分段点
     pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]
     # pt1和pt2中出现次数最多的值
-    final_result = max(set(pt1), key=pt1.count), max(set(pt2), key=pt2.count)
+    #final_result = max(set(pt1), key=pt1.count), max(set(pt2), key=pt2.count)
+    # 求平均值
+    pt1, pt2 = [i for i in pt1 if i is not None], [
+        i for i in pt2 if i is not None]
+    final_result = np.mean(pt1) if pt1 else None, np.mean(pt2) if pt2 else None
     print("segmentation final result: ", final_result)
     return final_result
 

@@ -84,6 +84,13 @@ def generate_stage3(durations, values,  start_timestamp, is_phase_down=False):
     return duration
 
 
+def find_nearest(array, value):
+    """找到最近的点，返回索引"""
+    array = np.asarray(array)
+    idx = (np.abs(array - value)).argmin()
+    return idx
+
+
 def generate_single_current(durations, values, phase_name, type="normal"):
     """产生电流曲线"""
     global result
@@ -114,11 +121,6 @@ def generate_single_current(durations, values, phase_name, type="normal"):
 
     x, y = map(lambda x: list(x), result)  # 转换为list
 
-    def find_nearest(array, value):
-        """找到最近的点，返回索引"""
-        array = np.asarray(array)
-        idx = (np.abs(array - value)).argmin()
-        return idx
     fault_features = {
         "H2": {
             "start": find_nearest(x, segmentations[0])+1,
@@ -287,13 +289,20 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
     产生瓦数曲线，采用直接计算的方式，需传入三项电流曲线
     P (kW) = I (Amps) × V (Volts) × PF(功率因数) × 1.732
     """
-    x, _ = current_series['A']
+    # x, _ = current_series['A']
+    # 取三相电流曲线最长的作为功率曲线x轴
+    x = []
+    for series in current_series.values():
+        t, _ = series
+        if len(t) > len(x):
+            x = t
     length = len(x)
     result = np.zeros(length)
     for phase in ["A", "B", "C"]:
         for i in range(length):
             _, current = current_series[phase]
-            result[i] += current[i]*220*power_factor*1.732
+            result[i] += current[i]*220*power_factor * \
+                1.732 if i < len(current) else 0
     if show_plt:
         plt.plot(x, result)
         plt.title("Power Series")
@@ -301,6 +310,28 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
         plt.ylabel("Power(W)")
         plt.show()
     return x, result
+
+
+def show_sample(result, type=""):
+    fig = plt.figure(dpi=150, figsize=(9, 2))
+    ax1 = fig.subplots()
+    ax2 = ax1.twinx()
+    for phase in ["A", "B", "C"]:
+        ax1.plot(*result[phase], label=f"Phase {phase}")
+    ax2.plot(*result["power"], 'b--', label="Power")
+    plt.title(f"Sample {type.capitalize()}")
+    ax1.set_xlabel("Time(s)")
+    ax1.set_ylabel("Current(A)")
+    ax2.set_ylabel('Power(W)')
+
+    ax1.set_ylim(bottom=0, top=5)
+    ax2.set_ylim(bottom=0, top=5000)  # 限制y轴范围，避免图像过于密集
+
+    plt.xlim(0, None)  # 设置x轴范围
+    lines, labels = ax1.get_legend_handles_labels()
+    lines2, labels2 = ax2.get_legend_handles_labels()
+    plt.legend(lines + lines2, labels + labels2, loc='best')
+    plt.show()
 
 
 def generate_sample(type="normal", show_plt=False):
@@ -311,25 +342,7 @@ def generate_sample(type="normal", show_plt=False):
     result = current_series
     result["power"] = power_series  # 将瓦数曲线加入结果
     if show_plt:  # debug usage
-        fig = plt.figure(dpi=150, figsize=(9, 2))
-        ax1 = fig.subplots()
-        ax2 = ax1.twinx()
-        for phase in ["A", "B", "C"]:
-            ax1.plot(*result[phase], label=f"Phase {phase}")
-        ax2.plot(*result["power"], 'b--', label="Power")
-        plt.title(f"Sample {type.capitalize()}")
-        ax1.set_xlabel("Time(s)")
-        ax1.set_ylabel("Current(A)")
-        ax2.set_ylabel('Power(W)')
-
-        ax1.set_ylim(bottom=0, top=5)
-        ax2.set_ylim(bottom=0, top=5000)  # 限制y轴范围，避免图像过于密集
-
-        plt.xlim(0, None)  # 设置x轴范围
-        lines, labels = ax1.get_legend_handles_labels()
-        lines2, labels2 = ax2.get_legend_handles_labels()
-        plt.legend(lines + lines2, labels + labels2, loc='best')
-        plt.show()
+        show_sample(result, type)
     return result
 
 

@@ -123,18 +123,18 @@ def generate_single_current(durations, values, phase_name, type="normal"):
 
     fault_features = {
         "H2": {
-            "start": find_nearest(x, segmentations[0])+1,
+            "start": find_nearest(x, segmentations[0]),
             "end": find_nearest(x, segmentations[1]),
             "noise_level": 0.4,
             "percentage": 0.2
         },
         "H4": {
-            "start": find_nearest(x, segmentations[0])+1,
+            "start": find_nearest(x, segmentations[0]),
             "end": find_nearest(x, segmentations[1]),
             "noise_level": (0.4, 0.7),
             "percentage": 0.05},
         "H5": {
-            "start": find_nearest(x, segmentations[1])+1,
+            "start": find_nearest(x, segmentations[1]),
             "end": len(x),
             "noise_level": 0.4,
             "percentage": 0.2},

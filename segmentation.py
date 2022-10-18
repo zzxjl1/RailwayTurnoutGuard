@@ -58,10 +58,10 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
         threshold -= 1  # 降低“自适应阈值”
         print("applying adaptive threshhold: ", threshold)
         return find_segmentation_point_1(x, y, threshold)
-    print("peak_point_available: ", np.array(x)[peak_idx])
+    #print("peak_point_available: ", np.array(x)[peak_idx])
     index = peak_idx[1]  # 点的索引
     result = x[index]  # 点的x值（时间）
-    print("segmentation point 1: ", result)
+    #print("segmentation point 1: ", result)
     return index, result
 
 
@@ -77,10 +77,10 @@ def find_segmentation_point_2(x, y, segmentation_point_1_index):
     if len(peak_idx) == 0 or len(prominences) == 0:  # 没有找到峰值，说明分段点不存在
         print("segmentation point 2 not found")
         return None, None
-    print("peak_point_available: ", np.array(x)[peak_idx])
+    #print("peak_point_available: ", np.array(x)[peak_idx])
     index = np.argmax(prominences)  # 找到最大的峰值
     result = x[peak_idx[index]]  # 峰值的x值（时间）
-    print("segmentation point 2: ", result)
+    #print("segmentation point 2: ", result)
     return index, result
 
 

@@ -19,7 +19,7 @@ def get_paper_sample(type="normal", show_plt=False):
         y = df.iloc[1:, index+1:index+2].values
         y = y[~pd.isnull(y)].reshape(-1)
 
-        print(name, x, y)
+        #print(name, x, y)
         assert len(x) == len(y)
         result[name] = interpolate(x, y)
 

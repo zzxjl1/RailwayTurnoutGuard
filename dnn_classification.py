@@ -25,8 +25,8 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 5  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
+EPOCHS = 30  # 训练数据集的轮次
+LEARNING_RATE = 1e-4  # 学习率
 
 
 def weight_init(m):

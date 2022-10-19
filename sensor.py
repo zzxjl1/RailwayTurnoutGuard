@@ -65,17 +65,20 @@ def generate_stage2(durations, values, start_timestamp, is_phase_down=False):
     return duration
 
 
-def generate_stage3(durations, values,  start_timestamp, is_phase_down=False):
+def generate_stage3(durations, values,  start_timestamp, is_phase_down=False, add_end_zeros=True):
     """产生第三阶段的关键点"""
 
     # 适配论文中某项掉电的情况
     stage2_final_val = values["stage2_final_val"] if not is_phase_down else 0
 
     duration = durations["stage3_stable_duration"] + \
-        durations["stage3_decrease_duration"]  # 第三阶段持续时间
+        durations["stage3_decrease_duration"] +\
+        durations["stage3_end_zeros_duration"]  # 第三阶段持续时间
     key_points = [(start_timestamp, stage2_final_val),
                   (start_timestamp +
                    durations["stage3_stable_duration"], stage2_final_val),
+                  (start_timestamp + durations["stage3_stable_duration"] +
+                   durations["stage3_decrease_duration"], 0),
                   (start_timestamp+duration, 0)]  # 第三阶段关键点
     # print(key_points)
     global result
@@ -188,7 +191,9 @@ def generate_durations_and_values(type="normal"):
         # 也有一段时间电流几乎保持不变，但比stage 2短一些
         "stage3_stable_duration": random_float(1.5, 2.5),
         # 结束时电流下降过程的用时
-        "stage3_decrease_duration": random_float(0, 0.1)
+        "stage3_decrease_duration": random_float(0, 0.1),
+        # 结尾延迟
+        "stage3_end_zeros_duration": random_float(0.2, 0.3),
     }
     values = {
         "stage1_max_val": random_float(4.5, 5.5),  # 电机启动电流峰值
@@ -346,7 +351,7 @@ def generate_sample(type="normal", show_plt=False):
     return result
 
 
-def add_noise(x, y, noise_level=0.05, percentage=0.3):
+def add_noise(x, y, noise_level=0.1, percentage=0.2):
     """加入抖动噪声"""
     if isinstance(noise_level, float):  # 如果为浮点数
         noice_range = (-noise_level/2, noise_level/2)

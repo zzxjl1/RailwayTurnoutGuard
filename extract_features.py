@@ -21,10 +21,14 @@ def calc_features_per_stage(x, y, series_name, stage_name):
             len(y)//2]  # 中位数
         result[f"{series_name}_{stage_name}_std"] = (sum([(i-result[f"{series_name}_{stage_name}_mean"])**2 for i in y]) /
                                                         (len(y)-1))**0.5  # Standard deviation
-        result[f"{series_name}_{stage_name}_peak_factor"] = max(
-            y)/(sum(y)/len(y))  # Peak factor
-        result[f"{series_name}_{stage_name}_fluctuation_factor"] = (
-            max(y)-min(y))/(sum(y)/len(y))  # Fluctuation factor
+        if sum(y)/len(y) != 0:  # 防止除数为0
+            result[f"{series_name}_{stage_name}_peak_factor"] = max(
+                y)/(sum(y)/len(y))  # Peak factor
+            result[f"{series_name}_{stage_name}_fluctuation_factor"] = (
+                max(y)-min(y))/(sum(y)/len(y))  # Fluctuation factor
+        else:
+            result[f"{series_name}_{stage_name}_peak_factor"] = 0
+            result[f"{series_name}_{stage_name}_fluctuation_factor"] = 0
         # nan值置0
         for k, v in result.items():
             if v != v:
@@ -127,6 +131,6 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
 
 if __name__ == "__main__":
 
-    sample = generate_sample()
+    sample = generate_sample("H2")
     t = calc_features(sample)
     print(t)

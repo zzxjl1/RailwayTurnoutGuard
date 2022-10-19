@@ -8,7 +8,7 @@ from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
 SEGMENT_POINT_1_THRESHOLD = 30
-END_BLACKOUT_THRESHOLD = 0.3  # 计算分界点2时屏蔽最后0.3秒的数据，因为剧烈波动会干扰算法
+END_BLACKOUT_THRESHOLD = 0.2  # 计算分界点2时屏蔽最后X秒的数据，因为剧烈波动会干扰算法
 
 
 def get_d(s, smooth=True, show_plt=False, name=""):
@@ -147,6 +147,9 @@ def calc_segmentation_points(sample):
     pt1, pt2 = [i for i in pt1 if i is not None], [
         i for i in pt2 if i is not None]
     final_result = np.mean(pt1) if pt1 else None, np.mean(pt2) if pt2 else None
+    # 特殊情况：如果第二个分段点小于等于第一个分段点，丢弃
+    if final_result[0] and final_result[1] and final_result[1] <= final_result[0]:
+        final_result = final_result[0], None
     print("segmentation final result: ", final_result)
     return final_result
 

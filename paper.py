@@ -1,5 +1,6 @@
 
 import pandas as pd
+from extract_features import calc_features
 from sensor import interpolate, generate_power_series, show_sample
 from dnn_classification import get_label_from_result_pretty, predict
 
@@ -30,7 +31,8 @@ def get_paper_sample(type="normal", show_plt=False):
     return result
 
 
-sample = get_paper_sample()
+sample = get_paper_sample(type="H1", show_plt=True)
+# print(calc_features(sample))
 result = predict(sample)
 print(result)
 label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串

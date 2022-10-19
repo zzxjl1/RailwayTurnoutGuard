@@ -65,8 +65,9 @@ def lda():
     """
 
 
-pca_1()
-pca_2()
-pca_3()
-lda()
-"""由此可见，pca、lda效果都不好"""
+if __name__ == "__main__":
+    pca_1()
+    pca_2()
+    pca_3()
+    lda()
+    """由此可见，pca、lda效果都不好"""

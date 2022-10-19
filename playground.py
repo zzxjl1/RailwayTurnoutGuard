@@ -3,13 +3,17 @@ from dnn_classification import generate_data
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
+from sklearn.preprocessing import StandardScaler, MinMaxScaler
 from extract_features import calc_features
 from paper import get_paper_sample
 from sensor import SUPPORTED_SAMPLE_TYPES
 
-SAMPLE_COUNT = 500
+SAMPLE_COUNT = 1000
 x, y = generate_data(SAMPLE_COUNT)
 y = [i.index(1) for i in y]  # 将one-hot编码转换为索引
+
+#x = MinMaxScaler().fit_transform(x)
+x = StandardScaler().fit_transform(x)
 
 
 def pca_1():

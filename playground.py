@@ -11,7 +11,7 @@ SAMPLE_COUNT = 500
 x, y = generate_data(SAMPLE_COUNT)
 y = [i.index(1) for i in y]
 
-
+"""
 def pca_1():
     global x, y
     pca = PCA(n_components=1)
@@ -21,7 +21,9 @@ def pca_1():
 
     # 画图
     plt.scatter(newX, newX, c=y)
+    plt.title("pca_1")
     plt.show()
+"""
 
 
 def pca_2():
@@ -33,6 +35,7 @@ def pca_2():
 
     # 画图
     plt.scatter(newX[:, 0], newX[:, 1], c=y)
+    plt.title("pca_2")
     plt.show()
 
 
@@ -47,14 +50,42 @@ def pca_3():
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     ax.scatter(newX[:, 0], newX[:, 1], newX[:, 2], c=y)
+    plt.title("pca_3")
     plt.show()
 
 
-def lda():
+def lda_2():
+    global x, y
+    clf = LinearDiscriminantAnalysis(n_components=2)
+    newX = clf.fit_transform(x, y)
+    print(newX)
+
+    # 画图
+    plt.scatter(newX[:, 0], newX[:, 1], c=y)
+    plt.title("lda_2")
+    plt.show()
+
+
+def lda_3():
+    global x, y
+    clf = LinearDiscriminantAnalysis(n_components=3)
+    newX = clf.fit_transform(x, y)
+    print(newX)
+
+    # 画图
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(newX[:, 0], newX[:, 1], newX[:, 2], c=y)
+    plt.title("lda_3")
+    plt.show()
+
+
+def lda_predict():
     global x, y
     clf = LinearDiscriminantAnalysis()
     clf.fit(x, y)
     x, y = generate_data(20)
+    print("-----lda_predict-----")
     print("prediction result:", clf.predict(x))
     print("real:", [i.index(1) for i in y])
     """
@@ -66,8 +97,10 @@ def lda():
 
 
 if __name__ == "__main__":
-    pca_1()
+    # pca_1()
     pca_2()
     pca_3()
-    lda()
+    lda_2()
+    lda_3()
+    lda_predict()
     """由此可见，pca、lda效果都不好"""

@@ -65,8 +65,8 @@ model = Net().to(DEVICE)
 
 # 定义模型结构
 model = nn.Sequential(
-    nn.BatchNorm1d(1+8*3*4),  # 归一化
-    nn.Linear(1+8*3*4, 64),  # 全连接层
+    nn.BatchNorm1d(1+10*3*4),  # 归一化
+    nn.Linear(1+10*3*4, 64),  # 全连接层
     nn.BatchNorm1d(64),
     nn.ReLU(),  # 激活函数
     nn.Linear(64, 128),
@@ -191,6 +191,7 @@ def train():
     fit(train_dl, valid_dl)  # 开始训练
 
     torch.save(model, 'model.pth')  # 保存模型
+    # torch.onnx.export(model, torch.randn(1, 1+8*3*4),"model.onnx")  # 保存onnx格式模型
 
 
 def parse_predict_result(result):

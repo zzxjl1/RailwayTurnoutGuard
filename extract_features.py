@@ -2,9 +2,11 @@
 从sample（共4条曲线）中提取特征
 """
 
+import random
 from segmentation import calc_segmentation_points, calc_segmentation_points_single_series
-from sensor import find_nearest, generate_sample
+from sensor import SUPPORTED_SAMPLE_TYPES, find_nearest, generate_sample
 from collections import OrderedDict
+import matplotlib.pyplot as plt
 
 
 def calc_features_per_stage(x, y, series_name, stage_name):
@@ -20,15 +22,21 @@ def calc_features_per_stage(x, y, series_name, stage_name):
         result[f"{series_name}_{stage_name}_median"] = sorted(y)[
             len(y)//2]  # 中位数
         result[f"{series_name}_{stage_name}_std"] = (sum([(i-result[f"{series_name}_{stage_name}_mean"])**2 for i in y]) /
-                                                        (len(y)-1))**0.5  # Standard deviation
+                                                     len(y))**0.5  # Standard deviation
+        result[f"{series_name}_{stage_name}_kurtosis"] = sum(
+            [(i-result[f"{series_name}_{stage_name}_mean"])**4 for i in y]) / len(y)  # 峭度
+        result[f"{series_name}_{stage_name}_rms"] = (
+            sum([i**2 for i in y]) / len(y))**0.5  # 均方根
+
         if sum(y)/len(y) != 0:  # 防止除数为0
-            result[f"{series_name}_{stage_name}_peak_factor"] = max(
-                y)/(sum(y)/len(y))  # Peak factor
-            result[f"{series_name}_{stage_name}_fluctuation_factor"] = (
-                max(y)-min(y))/(sum(y)/len(y))  # Fluctuation factor
+            result[f"{series_name}_{stage_name}_impluse_factor"] = max(
+                y)/(sum(y)/len(y))  # Impulse factor
+            result[f"{series_name}_{stage_name}_peak_factor"] = (
+                max(y)-min(y))/(sum(y)/len(y))  # Peak factor
+
         else:
+            result[f"{series_name}_{stage_name}_impluse_factor"] = 0
             result[f"{series_name}_{stage_name}_peak_factor"] = 0
-            result[f"{series_name}_{stage_name}_fluctuation_factor"] = 0
         # nan值置0
         for k, v in result.items():
             if v != v:
@@ -40,10 +48,13 @@ def calc_features_per_stage(x, y, series_name, stage_name):
         result[f"{series_name}_{stage_name}_mean"] = 0
         result[f"{series_name}_{stage_name}_median"] = 0
         result[f"{series_name}_{stage_name}_std"] = 0
-        result[f"{series_name}_{stage_name}_peak_factor"] = 0
-        result[f"{series_name}_{stage_name}_fluctuation_factor"] = 0
+        result[f"{series_name}_{stage_name}_kurtosis"] = 0
+        result[f"{series_name}_{stage_name}_rms"] = 0
 
-    assert len(result) == 8  # 断言确保8个特征
+        result[f"{series_name}_{stage_name}_impluse_factor"] = 0
+        result[f"{series_name}_{stage_name}_peak_factor"] = 0
+
+    assert len(result) == 10  # 断言确保10个特征
     return result
 
 
@@ -61,7 +72,7 @@ def calc_features(sample):
         result.update(t)  # 合并
     result["total_time_elipsed"] = total_time_elipsed
 
-    assert len(result) == 1+8*3*4  # 断言确保特征数
+    assert len(result) == 1+10*3*4  # 断言确保特征数
     return result
 
 
@@ -125,12 +136,50 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
         stage3 = calc_features_per_stage(None, None, series_name, "stage3")
         features.update(stage3)
 
-    assert len(features) == 8*3
+    assert len(features) == 10*3
     return features
 
 
-if __name__ == "__main__":
+def test(type=None):
+    if not type:
+        type = random.choice(SUPPORTED_SAMPLE_TYPES)
+    sample = generate_sample(type)
+    result = calc_features(sample)
+    # print(result)
+    return type, result
 
-    sample = generate_sample("H2")
-    t = calc_features(sample)
-    print(t)
+
+if __name__ == "__main__":
+    print(test())
+
+    results = {}
+    for _ in range(100):
+        type, features = test()
+        for k, v in features.items():
+            if k not in results:
+                results[k] = [(v, type)]
+            else:
+                results[k].append((v, type))
+
+    print(results)
+    for name in results:
+        t = {}
+        for type in SUPPORTED_SAMPLE_TYPES:
+            t[type] = [i[0] for i in results[name] if i[1] == type]
+        results[name] = t
+
+    print(results)
+    count = 1
+    for k, v in results.items():
+        height, width = 13, 10
+        #height, width = 10, 5
+        if count > height*width:
+            break
+        plt.subplot(height, width, count)
+        count += 1
+        plt.title(k, fontsize=10)
+        for type, data in v.items():
+            plt.plot([i for i in range(len(data))], data, label=type)
+    # plt.legend(loc="best")
+    plt.tight_layout()
+    plt.show()

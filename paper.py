@@ -33,7 +33,7 @@ def get_paper_sample(type="normal", show_plt=False):
 
 if __name__ == "__main__":
 
-    sample = get_paper_sample(type="H1", show_plt=True)
+    sample = get_paper_sample(type="H3", show_plt=True)
     # print(calc_features(sample))
     result = predict(sample)
     print(result)

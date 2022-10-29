@@ -143,7 +143,7 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
 def test(type=None):
     if not type:
         type = random.choice(SUPPORTED_SAMPLE_TYPES)
-    sample = generate_sample(type)
+    sample, _ = generate_sample(type)
     result = calc_features(sample)
     # print(result)
     return type, result

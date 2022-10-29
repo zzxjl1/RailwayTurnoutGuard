@@ -158,9 +158,10 @@ if __name__ == "__main__":
     # calc_segmentation_points(generate_sample())
 
     for type in SUPPORTED_SAMPLE_TYPES:
-        sample = generate_sample(type)
+        sample, segmentations = generate_sample(type)
         print(sample.keys())
         name = "A"
         series = sample[name]
         calc_segmentation_points_single_series(
             series, name=f"{type} {name}", show_plt=True)
+        print(segmentations)

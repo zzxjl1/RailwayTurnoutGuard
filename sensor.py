@@ -115,7 +115,7 @@ def generate_single_current(durations, values, phase_name, type="normal"):
         durations, values, time_elipsed, is_phase_down)  # 产生第三阶段
     time_elipsed += duration  # 时间戳增加
 
-    values["segmentations"][phase_name] = segmentations
+    values["segmentations"] = segmentations
 
     print(f"phase {phase_name} keypoints: ", result)
     print(f"phase {phase_name} time_elipsed: ", time_elipsed)
@@ -177,7 +177,7 @@ def generate_durations_and_values(type="normal"):
         # 开始延迟，开始时电流为0，需要等待一段时间才开始上升
         "start_delay": random_float(0.1, 0.25),
         # 电机电流上升到最大值的时间（启动时的瞬间）
-        "rise_to_max_duration": random_float(0.05, 0.2),
+        "rise_to_max_duration": random_float(0.05, 0.1),
         # 电机从瞬间大电流下降到正常的时间
         "down_to_normal_duration": random_float(0.05, 0.1),
 
@@ -202,7 +202,7 @@ def generate_durations_and_values(type="normal"):
         # stage 2最终值，stage 3平台期的电流值，请结合图看
         "stage2_final_val": random_float(0.5, 0.9),
         # 分段点
-        "segmentations": {"A": [], "B": [], "C": []},
+        "segmentations": [],
         # 适配论文中某项掉电的情况
         "phase_down": random.choice(["A", "B", "C"])
     }
@@ -286,7 +286,7 @@ def generate_current_series(type="normal", show_plt=False):
         plt.xlabel("Time(s)")
         plt.ylabel("Current(A)")
         plt.show()
-    return current_results
+    return current_results, values["segmentations"]
 
 
 def generate_power_series(current_series, power_factor=0.8, show_plt=False):
@@ -341,27 +341,29 @@ def show_sample(result, type=""):
 
 def generate_sample(type="normal", show_plt=False):
     """产生单个样本(4条曲线)"""
-    current_series = generate_current_series(type, False)  # 产生三相电流曲线
+    current_series, segmentations = generate_current_series(
+        type, False)  # 产生三相电流曲线
     power_series = generate_power_series(
         current_series, show_plt=False)  # 产生瓦数曲线
     result = current_series
     result["power"] = power_series  # 将瓦数曲线加入结果
     if show_plt:  # debug usage
         show_sample(result, type)
-    return result
+    return result, segmentations
 
 
-def add_noise(x, y, noise_level=0.1, percentage=0.2):
+def add_noise(x, y, noise_level=0.05, percentage=0.2):
     """加入抖动噪声"""
     if isinstance(noise_level, float):  # 如果为浮点数
-        noice_range = (-noise_level/2, noise_level/2)
+        noice_range = (-noise_level, noise_level)
     elif isinstance(noise_level, tuple):  # 如果为元组
-        if random.random() < 0.8:
+        if random.random() < 0.5:
             # (1,2) -> (-2,-1)
             noice_range = (-noise_level[1], -noise_level[0])
         else:
             noice_range = noise_level
-    n = [random_float(*noice_range) for _ in range(len(x))]
+    n = [random_float(*noice_range)*random.choice([1, -1])
+         for _ in range(len(x))]
     for i in range(len(x)):
         if random.random() > percentage:  # 按概率加入噪声
             continue
@@ -378,18 +380,13 @@ def correct_curve(x, y):
 
 def interpolate(x, y):
     """根据关键点插值到固定采样率"""
-    interper = scipy.interpolate.interp1d(x, y, kind='slinear')  # 线性插值
+    interper = scipy.interpolate.interp1d(x, y, kind='linear')  # 线性插值
     time_elipsed = max(x)-min(x)  # 总时间
     x = np.linspace(min(x), max(x), round(
-        time_elipsed*SAMPLE_RATE/2))  # 第一次插值，采样率为目标的一半
+        time_elipsed*SAMPLE_RATE))  # 插值
     y = interper(x)
 
-    x_new = np.linspace(min(x), max(x), round(time_elipsed*SAMPLE_RATE))
-    interper = scipy.interpolate.interp1d(x, y, kind='cubic')  # 第二次插值
-    y_new = interper(x_new)
-    #y_new = scipy.interpolate.make_interp_spline(x, y)(x_new)
-
-    return correct_curve(x_new, y_new)
+    return correct_curve(x, y)
 
 
 def draw_line(x, y, title="", y_label=""):

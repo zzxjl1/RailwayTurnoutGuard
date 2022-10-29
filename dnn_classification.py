@@ -144,7 +144,7 @@ def generate_data(num):
             for sample_type in SUPPORTED_SAMPLE_TYPES:  # 每个类型
                 if len(x) >= num:  # 如果数量符合要求
                     break
-                sample = generate_sample(sample_type)  # 生成样本
+                sample, _ = generate_sample(sample_type)  # 生成样本
                 t = list(calc_features(sample).values())  # 计算特征
                 # STANDARDIZE
                 #t = (t - np.mean(t)) / np.std(t)
@@ -218,7 +218,7 @@ def predict(sample):
 
 def test(type="normal"):
     """生成type类型的样本，然后跑模型预测，最后返回是否正确"""
-    sample = generate_sample(type)  # 生成样本
+    sample, _ = generate_sample(type)  # 生成样本
     result = predict(sample)  # 预测
     print(result)
     label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串

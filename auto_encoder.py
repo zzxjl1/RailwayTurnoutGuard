@@ -3,6 +3,7 @@
 采用正常时间序列无监督训练，用于产生是否异常的置信度
 该置信度会用于之后的分类，以降低假阳率
 """
+import matplotlib.pyplot as plt
 import os
 import numpy as np
 import torch
@@ -12,13 +13,17 @@ import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 
-TIME_SERIES_LENGTH = SAMPLE_RATE * 20  # 20s的时间序列采样点数
+POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的采样点数
+TIME_SERIES_DURATION = 10  # 输入模型的时间序列长度为10s
+TIME_SERIES_LENGTH = SAMPLE_RATE * \
+    TIME_SERIES_DURATION//POOLING_FACTOR_PER_TIME_SERIES
 TRAINING_SET_LENGTH = 200
 TESTING_SET_LENGTH = 50
+SERIES_TO_ENCODE = ["A", "B", "C"]  # power暂时不用
 
 LEARNING_RATE = 1e-3
 BATCH_SIZE = 64
-EPOCHS = 500
+EPOCHS = 200
 
 FILENAME = './models/auto_encoder.pth'
 FORCE_CPU = True  # 强制使用CPU
@@ -26,38 +31,48 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
 
-
+TOTAL_LENGTH = TIME_SERIES_LENGTH * len(SERIES_TO_ENCODE)
+print("total length:", TOTAL_LENGTH)
 model = nn.Sequential(
-    nn.Linear(TIME_SERIES_LENGTH, round(TIME_SERIES_LENGTH/5)),
-    nn.Linear(round(TIME_SERIES_LENGTH/5), TIME_SERIES_LENGTH),
+    nn.Linear(TOTAL_LENGTH, round(TOTAL_LENGTH/5)),
+    nn.Linear(round(TOTAL_LENGTH/5), TOTAL_LENGTH),
 ).to(DEVICE)
 
 loss_func = nn.MSELoss()  # 均方误差
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
 
 
-def parse_input(phase_a_time_series):
+def parse(time_series):
+    # 降采样
+    time_series = time_series[::POOLING_FACTOR_PER_TIME_SERIES]
     # 超长的截断，短的补0
-    if len(phase_a_time_series) > TIME_SERIES_LENGTH:
+    if len(time_series) > TIME_SERIES_LENGTH:
         return np.array(
-            phase_a_time_series[:TIME_SERIES_LENGTH])
+            time_series[:TIME_SERIES_LENGTH])
     else:
         return np.pad(
-            phase_a_time_series, (0, TIME_SERIES_LENGTH - len(phase_a_time_series)), 'constant')
+            time_series, (0, TIME_SERIES_LENGTH - len(time_series)), 'constant')
 
 
-def generate_data():
+def get_sample(type):
+    temp, _ = generate_sample(type=type)
+    time_series = []
+    for type in SERIES_TO_ENCODE:
+        time_series += list(parse(temp[type][1]))
+    return time_series
+
+
+def generate_dataset():
     DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH
     DATASET = []
     for _ in range(DATASET_LENGTH):
-        temp, _ = generate_sample(type="normal")
-        phase_a_time_series = parse_input(temp["A"][1])
-        DATASET.append(phase_a_time_series)
+        time_series = get_sample("normal")
+        DATASET.append(time_series)
     return DATASET
 
 
 def get_dataloader():
-    temp = generate_data()
+    temp = generate_dataset()
     DATASET = torch.tensor(np.array(temp), dtype=torch.float,
                            requires_grad=True).to(DEVICE)
     print(DATASET.shape)
@@ -109,19 +124,20 @@ def predict(x):
 
 
 def draw(y_before, y_after, title=""):
-    import matplotlib.pyplot as plt
     plt.plot(y_before)
     plt.plot(y_after)
+    # x轴n等分，画竖线
+    for i in range(len(SERIES_TO_ENCODE)+1):
+        plt.axvline(x=TIME_SERIES_LENGTH*(i), color='r')
+    plt.axvline(x=TIME_SERIES_LENGTH, color='r', linestyle='--')
     plt.title(title)
     plt.show()
 
 
 def test(type="normal", show_plt=False):
     """生成一个正常样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
-    y, _ = generate_sample(type)
-    y_before = torch.tensor(parse_input(
-        y["A"][1]), dtype=torch.float).to(DEVICE)
-
+    y = get_sample(type)
+    y_before = torch.tensor(y, dtype=torch.float).to(DEVICE)
     y_after = predict(y_before)
     loss = loss_func(y_after, y_before)
     if show_plt:
@@ -131,10 +147,13 @@ def test(type="normal", show_plt=False):
 
 if __name__ == "__main__":
     train()
-    test_cycle = 10
-    show_plt = False
+    test_cycle = 5
     results = {}
     for type in SUPPORTED_SAMPLE_TYPES:
-        result = [test(type, show_plt) for _ in range(test_cycle)]
+        result = [test(type, show_plt=False) for _ in range(test_cycle)]
         results[type] = np.mean(result)
     print(results)
+    plt.bar(range(len(results)), results.values(),
+            tick_label=list(results.keys()))
+    plt.title("abnormal weights")
+    plt.show()

@@ -19,7 +19,7 @@ from extract_features import calc_features
 from alive_progress import alive_bar, alive_it
 from sensor import SUPPORTED_SAMPLE_TYPES, generate_sample
 
-
+FILENAME = "./models/dnn_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
@@ -162,10 +162,9 @@ def generate_data(num):
 
 def predict_raw_input(x):
     """预测,输入为原始数据，直接入模型"""
-    file_name = "model.pth"
     assert os.path.exists(
-        file_name), "model not found, please run train() first!"
-    model = torch.load(file_name)  # 加载模型
+        FILENAME), "model not found, please run train() first!"
+    model = torch.load(FILENAME)  # 加载模型
     model.eval()  # 验证模式
     with torch.no_grad():
         output = model(x)
@@ -190,7 +189,7 @@ def train():
     train_dl, valid_dl = get_data(train_ds, valid_ds)  # 转换为dataloader
     fit(train_dl, valid_dl)  # 开始训练
 
-    torch.save(model, 'model.pth')  # 保存模型
+    torch.save(model, FILENAME)  # 保存模型
     # torch.onnx.export(model, torch.randn(1, 1+8*3*4),"model.onnx")  # 保存onnx格式模型
 
 

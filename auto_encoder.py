@@ -23,7 +23,7 @@ SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂�
 
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
-EPOCHS = 200  # 训练轮数
+EPOCHS = 300  # 训练轮数
 
 FILENAME = './models/auto_encoder.pth'  # 模型保存路径
 FORCE_CPU = True  # 强制使用CPU
@@ -87,10 +87,12 @@ def get_dataloader():
     return train_dl, test_dl
 
 
-def loss_batch(model, x):
-    y = x + torch.randn(x.shape) * 0.5  # 加入噪声
-
-    result = model(y)  # 将加了噪声的数据输入模型
+def loss_batch(model, x, is_train):
+    if is_train:
+        y = x + torch.randn(x.shape) * 0.5  # 加入噪声
+        result = model(y)  # 将加了噪声的数据输入模型
+    else:
+        result = model(x)
     loss = loss_func(result, x)  # 目标值为没加噪声的x
     loss.requires_grad_(True)
     loss.backward()
@@ -105,12 +107,12 @@ def train():
     for epoch in range(EPOCHS):
         model.train()
         for x in train_dl:
-            loss_batch(model, x[0])
+            loss_batch(model, x[0], is_train=True)
 
         model.eval()
         with torch.no_grad():
             losses, nums = zip(
-                *[loss_batch(model, x[0]) for x in test_dl])
+                *[loss_batch(model, x[0], is_train=False) for x in test_dl])
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
         print(epoch, val_loss)
 
@@ -150,7 +152,7 @@ def test(type="normal", show_plt=False):
 
 if __name__ == "__main__":
     train()
-    test_cycle = 5
+    test_cycle = 10
     results = {}
     for type in SUPPORTED_SAMPLE_TYPES:
         result = [test(type, show_plt=False) for _ in range(test_cycle)]

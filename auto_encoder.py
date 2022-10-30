@@ -14,29 +14,30 @@ from torch.utils.data import DataLoader, TensorDataset
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的采样点数
-TIME_SERIES_DURATION = 10  # 输入模型的时间序列长度为10s
+TIME_SERIES_DURATION = 10  # 输入模型的时间序列时长为10s
 TIME_SERIES_LENGTH = SAMPLE_RATE * \
-    TIME_SERIES_DURATION//POOLING_FACTOR_PER_TIME_SERIES
-TRAINING_SET_LENGTH = 200
-TESTING_SET_LENGTH = 50
-SERIES_TO_ENCODE = ["A", "B", "C"]  # power暂时不用
+    TIME_SERIES_DURATION//POOLING_FACTOR_PER_TIME_SERIES  # 时间序列长度
+TRAINING_SET_LENGTH = 200  # 训练集长度
+TESTING_SET_LENGTH = 50  # 测试集长度
+SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂时不用
 
-LEARNING_RATE = 1e-3
-BATCH_SIZE = 64
-EPOCHS = 200
+LEARNING_RATE = 1e-3  # 学习率
+BATCH_SIZE = 64  # 批大小
+EPOCHS = 200  # 训练轮数
 
-FILENAME = './models/auto_encoder.pth'
+FILENAME = './models/auto_encoder.pth'  # 模型保存路径
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
 
-TOTAL_LENGTH = TIME_SERIES_LENGTH * len(SERIES_TO_ENCODE)
-print("total length:", TOTAL_LENGTH)
+TOTAL_LENGTH = TIME_SERIES_LENGTH * len(SERIES_TO_ENCODE)  # 输入总长度
+print("total input length:", TOTAL_LENGTH)
+
 model = nn.Sequential(
     nn.Linear(TOTAL_LENGTH, round(TOTAL_LENGTH/5)),
     nn.Linear(round(TOTAL_LENGTH/5), TOTAL_LENGTH),
-).to(DEVICE)
+).to(DEVICE)  # 定义模型，很简单的AE,注意中间层的维度必须<<输入才有效
 
 loss_func = nn.MSELoss()  # 均方误差
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
@@ -55,18 +56,20 @@ def parse(time_series):
 
 
 def get_sample(type):
+    """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
     temp, _ = generate_sample(type=type)
     time_series = []
     for type in SERIES_TO_ENCODE:
-        time_series += list(parse(temp[type][1]))
+        time_series += list(parse(temp[type][1]))  # concat操作
     return time_series
 
 
 def generate_dataset():
-    DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH
+    """生成数据集"""
+    DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH  # 数据集总长度
     DATASET = []
     for _ in range(DATASET_LENGTH):
-        time_series = get_sample("normal")
+        time_series = get_sample("normal")  # 必须只用正常样本训练
         DATASET.append(time_series)
     return DATASET
 
@@ -74,7 +77,7 @@ def generate_dataset():
 def get_dataloader():
     temp = generate_dataset()
     DATASET = torch.tensor(np.array(temp), dtype=torch.float,
-                           requires_grad=True).to(DEVICE)
+                           requires_grad=True).to(DEVICE)  # 转换为tensor
     print(DATASET.shape)
     train_ds = TensorDataset(DATASET[:TRAINING_SET_LENGTH])
     test_ds = TensorDataset(DATASET[TRAINING_SET_LENGTH:])
@@ -85,10 +88,10 @@ def get_dataloader():
 
 
 def loss_batch(model, x):
-    x += torch.randn(x.shape) * 0.5
+    y = x + torch.randn(x.shape) * 0.5  # 加入噪声
 
-    result = model(x)
-    loss = loss_func(result, x)
+    result = model(y)  # 将加了噪声的数据输入模型
+    loss = loss_func(result, x)  # 目标值为没加噪声的x
     loss.requires_grad_(True)
     loss.backward()
     optimizer.step()
@@ -111,7 +114,7 @@ def train():
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
         print(epoch, val_loss)
 
-    torch.save(model, FILENAME)
+    torch.save(model, FILENAME)  # 保存模型
 
 
 def predict(x):

@@ -89,7 +89,7 @@ def get_dataloader():
 
 def loss_batch(model, x, is_train):
     if is_train:
-        y = x + torch.randn(x.shape) * 0.5  # 加入噪声
+        y = x + torch.randn(x.shape) * 0.25  # 加入噪声
         result = model(y)  # 将加了噪声的数据输入模型
     else:
         result = model(x)
@@ -152,10 +152,10 @@ def test(type="normal", show_plt=False):
 
 if __name__ == "__main__":
     train()
-    test_cycle = 10
+    test_cycle = 1
     results = {}
     for type in SUPPORTED_SAMPLE_TYPES:
-        result = [test(type, show_plt=False) for _ in range(test_cycle)]
+        result = [test(type, show_plt=True) for _ in range(test_cycle)]
         results[type] = np.mean(result)
     print(results)
     plt.bar(range(len(results)), results.values(),

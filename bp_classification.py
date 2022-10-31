@@ -19,7 +19,7 @@ from extract_features import calc_features
 from alive_progress import alive_bar, alive_it
 from sensor import SUPPORTED_SAMPLE_TYPES, generate_sample
 
-FILENAME = "./models/dnn_classification.pth"
+FILENAME = "./models/bp_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU

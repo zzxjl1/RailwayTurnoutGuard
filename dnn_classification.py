@@ -19,14 +19,16 @@ from extract_features import calc_features
 from alive_progress import alive_bar, alive_it
 from sensor import SUPPORTED_SAMPLE_TYPES, generate_sample
 
-FILENAME = "./models/bp_classification.pth"
+FILENAME = "./models/dnn_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 30  # 训练数据集的轮次
-LEARNING_RATE = 1e-4  # 学习率
+EPOCHS = 100  # 训练数据集的轮次
+LEARNING_RATE = 1e-3  # 学习率
+
+INPUT_VECTOR_SIZE = 1 + 10 * 3 * 4
 
 
 def weight_init(m):
@@ -44,29 +46,39 @@ def weight_init(m):
         m.bias.data.zero_()
 
 
-"""
-class Net(nn.Module):
-    def __init__(self):
-        super(Net, self).__init__()
-        self.fc1 = nn.Linear(1+8*3*4, 64)
+class BP_Net(nn.Module):
+    def __init__(self, input_vector_size, output_vector_size):
+        super(BP_Net, self).__init__()
+        self.bn1 = nn.BatchNorm1d(input_vector_size)
+        self.fc1 = nn.Linear(input_vector_size, 64)
+        self.bn2 = nn.BatchNorm1d(64)
         self.fc2 = nn.Linear(64, 128)
-        self.out = nn.Linear(128, 12)
+        self.bn3 = nn.BatchNorm1d(128)
+        self.out = nn.Linear(128, output_vector_size)
+
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
-        x = F.relu(self.fc1(x))
-        x = F.relu(self.fc2(x))
-        # softmax
-        x = F.softmax(self.out(x), dim=1)
-        return x
+        bn1_result = self.bn1(x)
+
+        fc1_result = self.fc1(bn1_result)
+        bn2_result = self.bn2(fc1_result)
+        x = F.relu(bn2_result)
+
+        fc2_result = self.fc2(x)
+        bn3_result = self.bn3(fc2_result)
+        x = F.relu(bn3_result)
+
+        out = self.out(x)
+        softmax_result = self.softmax(out)
+        return softmax_result
 
 
-model = Net().to(DEVICE)
 """
-
-# 定义模型结构
-model = nn.Sequential(
-    nn.BatchNorm1d(1+10*3*4),  # 归一化
-    nn.Linear(1+10*3*4, 64),  # 全连接层
+# 定义BP模型结构
+BP_Net = nn.Sequential(
+    nn.BatchNorm1d(INPUT_VECTOR_SIZE),  # 归一化
+    nn.Linear(INPUT_VECTOR_SIZE, 64),  # 全连接层
     nn.BatchNorm1d(64),
     nn.ReLU(),  # 激活函数
     nn.Linear(64, 128),
@@ -74,9 +86,104 @@ model = nn.Sequential(
     nn.ReLU(),
     nn.Linear(128, 12),
     nn.Softmax(dim=1)  # 分类任务最后用softmax层
-).to(DEVICE)
+)
+"""
 
 
+class FuzzyLayer(nn.Module):
+
+    def __init__(self, input_dim, output_dim):
+        super(FuzzyLayer, self).__init__()
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        fuzzy_degree_weights = torch.Tensor(self.input_dim, self.output_dim)
+        self.fuzzy_degree = nn.Parameter(fuzzy_degree_weights)
+        sigma_weights = torch.Tensor(self.input_dim, self.output_dim)
+        self.sigma = nn.Parameter(sigma_weights)
+
+        # initialize fuzzy degree and sigma parameters
+        nn.init.xavier_uniform_(self.fuzzy_degree)  # fuzzy degree init
+        nn.init.ones_(self.sigma)  # sigma init
+
+    def forward(self, input):
+        fuzzy_out = []
+        for variable in input:
+            fuzzy_out_i = torch.exp(-torch.sum(torch.sqrt(
+                (variable - self.fuzzy_degree) / (self.sigma ** 2))))
+            if torch.isnan(fuzzy_out_i):
+                fuzzy_out.append(variable)
+            else:
+                fuzzy_out.append(fuzzy_out_i)
+        return torch.tensor(fuzzy_out, dtype=torch.float)
+
+
+class FusedFuzzyDeepNet(nn.Module):
+    def __init__(self, input_vector_size, fuzz_vector_size, num_class, fuzzy_layer_input_dim=1,
+                 fuzzy_layer_output_dim=1,
+                 dropout_rate=0.5, device=DEVICE):
+
+        super(FusedFuzzyDeepNet, self).__init__()
+        self.device = device
+        self.input_vector_size = input_vector_size
+        self.fuzz_vector_size = fuzz_vector_size
+        self.num_class = num_class
+        self.fuzzy_layer_input_dim = fuzzy_layer_input_dim
+        self.fuzzy_layer_output_dim = fuzzy_layer_output_dim
+
+        self.dropout_rate = dropout_rate
+
+        self.bn = nn.BatchNorm1d(self.input_vector_size)
+        self.fuzz_init_linear_layer = nn.Linear(
+            self.input_vector_size, self.fuzz_vector_size)
+
+        fuzzy_rule_layers = []
+        for i in range(self.fuzz_vector_size):
+            fuzzy_rule_layers.append(FuzzyLayer(
+                fuzzy_layer_input_dim, fuzzy_layer_output_dim))
+        self.fuzzy_rule_layers = nn.ModuleList(fuzzy_rule_layers)
+
+        self.dl_linear_1 = nn.Linear(
+            self.input_vector_size, self.input_vector_size)
+        self.dl_linear_2 = nn.Linear(
+            self.input_vector_size, self.input_vector_size)
+        self.dropout_layer = nn.Dropout(self.dropout_rate)
+        self.fusion_layer = nn.Linear(
+            self.input_vector_size * 2, self.input_vector_size)
+        self.output_layer = nn.Linear(self.input_vector_size, self.num_class)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, input):
+        input = self.bn(input)
+        fuzz_input = self.fuzz_init_linear_layer(input)
+        fuzz_output = torch.zeros(
+            input.size(), dtype=torch.float, device=self.device)
+        for col_idx in range(fuzz_input.size()[1]):
+            col_vector = fuzz_input[:, col_idx:col_idx + 1]
+            fuzz_col_vector = self.fuzzy_rule_layers[col_idx](
+                col_vector).unsqueeze(0).view(-1, 1)
+            fuzz_output[:, col_idx:col_idx + 1] = fuzz_col_vector
+
+        dl_layer_1_output = torch.sigmoid(self.dl_linear_1(input))
+        dl_layer_2_output = torch.sigmoid(self.dl_linear_2(dl_layer_1_output))
+        dl_layer_2_output = self.dropout_layer(dl_layer_2_output)
+
+        cat_fuzz_dl_output = torch.cat([fuzz_output, dl_layer_2_output], dim=1)
+
+        fused_output = torch.sigmoid(self.fusion_layer(cat_fuzz_dl_output))
+        fused_output = torch.relu(fused_output)
+
+        output = self.softmax(self.output_layer(fused_output))
+
+        return output
+
+
+model = FusedFuzzyDeepNet(input_vector_size=INPUT_VECTOR_SIZE,
+                          fuzz_vector_size=30, num_class=12).to(DEVICE)  # 使用FNN模型
+# model = BP_Net(input_vector_size=INPUT_VECTOR_SIZE,
+#               output_vector_size=12).to(DEVICE)  # 使用BP模型
+print(model)
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # adam优化器
 loss_func = nn.CrossEntropyLoss()  # 交叉熵损失函数
 model.apply(weight_init)  # 预初始化权重
@@ -173,8 +280,8 @@ def predict_raw_input(x):
 
 def train():
     """训练模型"""
-    DATASET_LENGTH = 10000  # 数据集长度
-    TRANING_SET_LENGTH = 8000  # 训练集长度
+    DATASET_LENGTH = 1000  # 数据集长度
+    TRANING_SET_LENGTH = 800  # 训练集长度
     DATASET = generate_data(DATASET_LENGTH)  # 生成数据集
 
     x, y = map(lambda a: torch.tensor(np.array(a), dtype=torch.float,
@@ -190,7 +297,7 @@ def train():
     fit(train_dl, valid_dl)  # 开始训练
 
     torch.save(model, FILENAME)  # 保存模型
-    # torch.onnx.export(model, torch.randn(1, 1+8*3*4),"model.onnx")  # 保存onnx格式模型
+    # torch.onnx.export(model, torch.randn(1, INPUT_VECTOR_SIZE),"model.onnx")  # 保存onnx格式模型
 
 
 def parse_predict_result(result):
@@ -229,7 +336,7 @@ if __name__ == '__main__':
 
     train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
-    test_cycles = 500  # 测试次数
+    test_cycles = 100  # 测试次数
     test_results = []
     for _ in range(test_cycles):
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测

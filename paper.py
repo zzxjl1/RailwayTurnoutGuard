@@ -2,12 +2,12 @@
 import pandas as pd
 from extract_features import calc_features
 from sensor import interpolate, generate_power_series, show_sample
-from bp_classification import get_label_from_result_pretty, predict
+from dnn_classification import get_label_from_result_pretty, predict, BP_Net, FusedFuzzyDeepNet, FuzzyLayer
 
 
 def get_paper_sample(type="normal", show_plt=False):
     df = pd.read_excel("paper.xlsx", sheet_name=type)
-    print(df)
+    # print(df)
     result = {}
     for name in ["A", "B", "C"]:
         # 获取名为 Phase $name的列的序号
@@ -31,11 +31,19 @@ def get_paper_sample(type="normal", show_plt=False):
     return result
 
 
-if __name__ == "__main__":
+def get_all_subsheets():
+    df = pd.read_excel("paper.xlsx", sheet_name=None)
+    result = []
+    for name, sheet in df.items():
+        result.append(name)
+    return result
 
-    sample = get_paper_sample(type="H1", show_plt=True)
-    # print(calc_features(sample))
-    result = predict(sample)
-    print(result)
-    label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串
-    print(label)
+
+if __name__ == "__main__":
+    for name in get_all_subsheets():
+        sample = get_paper_sample(type=name, show_plt=True)
+        # print(calc_features(sample))
+        result = predict(sample)
+        print(result)
+        label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串
+        print(label)

@@ -2,7 +2,7 @@
 import pandas as pd
 from extract_features import calc_features
 from sensor import interpolate, generate_power_series, show_sample
-from dnn_classification import get_label_from_result_pretty, predict
+from bp_classification import get_label_from_result_pretty, predict
 
 
 def get_paper_sample(type="normal", show_plt=False):

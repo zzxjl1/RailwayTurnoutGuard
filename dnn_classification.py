@@ -184,6 +184,7 @@ model = FusedFuzzyDeepNet(input_vector_size=INPUT_VECTOR_SIZE,
 # model = BP_Net(input_vector_size=INPUT_VECTOR_SIZE,
 #               output_vector_size=12).to(DEVICE)  # 使用BP模型
 print(model)
+
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # adam优化器
 loss_func = nn.CrossEntropyLoss()  # 交叉熵损失函数
 model.apply(weight_init)  # 预初始化权重
@@ -234,7 +235,7 @@ def fit(train_dl, valid_dl):
 
 def generate_data(num):
     """生成数据集（带缓存）"""
-    filename = 'dataset.pkl'
+    filename = 'extracted_features_dataset.pkl'
     if os.path.exists(filename):  # 如果缓存存在
         with open(filename, 'rb') as f:
             x, y = pickle.load(f)  # 读取

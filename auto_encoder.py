@@ -60,7 +60,8 @@ def get_sample(type):
     temp, _ = generate_sample(type=type)
     time_series = []
     for type in SERIES_TO_ENCODE:
-        time_series += list(parse(temp[type][1]))  # concat操作
+        result = parse(temp[type][1])
+        time_series += list(result)  # concat操作
     return time_series
 
 

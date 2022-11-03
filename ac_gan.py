@@ -7,8 +7,6 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import torch
 import torch.nn as nn
-from scipy.interpolate import interp1d
-
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 
 
@@ -17,12 +15,15 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 100  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
+EPOCHS = 500  # 训练数据集的轮次
+LEARNING_RATE = 1e-4  # 学习率
 
 N_CLASSES = 12  # 分类数
 NOISE_DIM = 100  # 噪声维度
-DATASET_LENGTH = 100  # 数据集总长度
+DATASET_LENGTH = 50  # 数据集总长度
+TIME_SERIES_DURATION = 20  # 20s
+TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
+SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power曲线
 
 
 class Generator(nn.Module):
@@ -44,14 +45,14 @@ class Generator(nn.Module):
         self.deconv1 = nn.Sequential(
             # (Lin​−1)×stride+kernel_size
             nn.ConvTranspose1d(in_channels=768, out_channels=384, kernel_size=32, stride=1,
-                               padding=0, bias=False),  # out=32
+                               padding=0, bias=False),
             nn.BatchNorm1d(384),
             nn.ReLU(True)
         )
 
         self.deconv2 = nn.Sequential(
             nn.ConvTranspose1d(in_channels=384, out_channels=256, kernel_size=32, stride=1,
-                               padding=0, bias=False),  # 94
+                               padding=0, bias=False),
             nn.BatchNorm1d(256),
             nn.ReLU(True)
         )
@@ -92,7 +93,7 @@ class Generator(nn.Module):
         return out
 
     def generate(self, sample_type):
-        z = torch.randn(1, NOISE_DIM)  # *, 100
+        z = torch.randn(1, NOISE_DIM)
         label = torch.tensor(SUPPORTED_SAMPLE_TYPES.index(
             sample_type), dtype=torch.long)
         result = self.forward(z, label)
@@ -308,11 +309,6 @@ def train(data_loader):
 
         print("epoch:{}, d_loss: {:.4f}, g_loss: {:.4f}, d_acc: {:.4f}"
               .format(epoch, d_loss.item(), g_loss_fake.item(), d_acc))
-
-
-TIME_SERIES_DURATION = 20
-TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION
-SERIES_TO_ENCODE = ['A', 'B', 'C']
 
 
 def parse(time_series):

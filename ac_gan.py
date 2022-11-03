@@ -17,12 +17,12 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 1  # 训练数据集的轮次
+EPOCHS = 100  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 
-N_CLASSES = 12
-NOISE_DIM = 100
-DATASET_LENGTH = 500  # 数据集总长度
+N_CLASSES = 12  # 分类数
+NOISE_DIM = 100  # 噪声维度
+DATASET_LENGTH = 100  # 数据集总长度
 
 
 class Generator(nn.Module):
@@ -72,7 +72,7 @@ class Generator(nn.Module):
 
         self.last = nn.Sequential(
             nn.ConvTranspose1d(in_channels=64, out_channels=self.channels, kernel_size=32, stride=4,
-                               padding=0, bias=False),  # 341*4+4=1200
+                               padding=0, bias=False),
             nn.Tanh()
         )
 
@@ -85,7 +85,7 @@ class Generator(nn.Module):
         out = self.deconv2(out)
         out = self.deconv3(out)
         out = self.deconv4(out)
-        out = self.last(out)  # (*, c, 64, 64)
+        out = self.last(out)
 
         out = torch.nn.functional.interpolate(
             out, size=TIME_SERIES_LENGTH, mode='linear')
@@ -96,7 +96,8 @@ class Generator(nn.Module):
         label = torch.tensor(SUPPORTED_SAMPLE_TYPES.index(
             sample_type), dtype=torch.long)
         result = self.forward(z, label)
-        return result
+        result = result.detach().numpy()
+        return result[0]
 
 
 class Discriminator(nn.Module):
@@ -109,7 +110,6 @@ class Discriminator(nn.Module):
         self.channels = channels
         self.n_classes = n_classes
 
-        # (*, c, 64, 64)
         self.conv1 = nn.Sequential(
             nn.Conv1d(in_channels=self.channels, out_channels=16,
                       kernel_size=3, stride=2, padding=1, bias=False),
@@ -117,7 +117,6 @@ class Discriminator(nn.Module):
             nn.Dropout(0.5, inplace=False)
         )
 
-        # (*, 64, 32, 32)
         self.conv2 = nn.Sequential(
             nn.Conv1d(in_channels=16, out_channels=32, kernel_size=3,
                       stride=1, padding=1, bias=False),
@@ -126,7 +125,6 @@ class Discriminator(nn.Module):
             nn.Dropout(0.5, inplace=False)
         )
 
-        # (*, 128, 16, 16)
         self.conv3 = nn.Sequential(
             nn.Conv1d(in_channels=32, out_channels=64, kernel_size=3,
                       stride=2, padding=1, bias=False),
@@ -135,7 +133,6 @@ class Discriminator(nn.Module):
             nn.Dropout(0.5, inplace=False)
         )
 
-        # (*, 256, 8, 8)
         self.conv4 = nn.Sequential(
             nn.Conv1d(in_channels=64, out_channels=128,
                       kernel_size=3, stride=1, padding=1, bias=False),
@@ -160,14 +157,12 @@ class Discriminator(nn.Module):
             nn.Dropout(0.5, inplace=False)
         )
 
-        # output layers
-        # (*, 512, 8, 8)
-        # dis fc
+        # 置信度
         self.last_adv = nn.Sequential(
             nn.Linear(150*512, 1),
             nn.Sigmoid()
         )
-        # aux classifier fc
+        # 分类情况
         self.last_aux = nn.Sequential(
             nn.Linear(150*512, self.n_classes),
             nn.Softmax(dim=1)
@@ -208,8 +203,8 @@ discriminator = Discriminator(n_classes=N_CLASSES).to(DEVICE)
 print(generator)
 print(discriminator)
 
-generator.apply(weights_init)
-discriminator.apply(weights_init)
+generator.apply(weights_init)  # 初始化权重
+discriminator.apply(weights_init)  # 初始化权重
 
 # optimizer
 generator_optimizer = torch.optim.Adam(
@@ -217,7 +212,7 @@ generator_optimizer = torch.optim.Adam(
 discriminator_optimizer = torch.optim.Adam(
     discriminator.parameters(), lr=LEARNING_RATE)
 
-# for orignal gan loss function
+# 损失函数
 adversarial_loss_sigmoid = nn.BCEWithLogitsLoss()
 aux_loss = nn.CrossEntropyLoss()
 
@@ -228,7 +223,7 @@ def tensor2var(x):
 
 
 def compute_acc(real_aux, fake_aux, labels, gen_labels):
-    # Calculate discriminator accuracy
+    # 计算鉴别器的准确率
     pred = np.concatenate([real_aux.data.cpu().numpy(),
                           fake_aux.data.cpu().numpy()], axis=0)
     #print(labels, gen_labels)
@@ -377,6 +372,7 @@ def draw(y, title=""):
 if __name__ == '__main__':
     dataloader = get_dataloader()
     train(dataloader)
-    t = generator.generate("normal")
+    type = "normal"
+    t = generator.generate(type)
     print(t, t.shape)
-    draw(t, "normal")
+    draw(t.flatten(), title=type)

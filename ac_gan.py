@@ -1,5 +1,7 @@
 """
 一种修改过的ACGAN,将2d卷积换为1d，用于扩充数据集，改善数据集不平衡、数量不足的问题。
+注意：这里的ACGAN是针对时间序列的，所以输入的数据是时间序列，而不是图片。
+如果lstm-gan效果更好，则计划只用于baseline
 """
 import random
 from matplotlib import pyplot as plt
@@ -15,7 +17,7 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 500  # 训练数据集的轮次
+EPOCHS = 1000  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
 
 N_CLASSES = 12  # 分类数
@@ -88,6 +90,7 @@ class Generator(nn.Module):
         out = self.deconv4(out)
         out = self.last(out)
 
+        # print("generater output shape before interpolte:", out.shape)  # debug only
         out = torch.nn.functional.interpolate(
             out, size=TIME_SERIES_LENGTH, mode='linear')
         return out

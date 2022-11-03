@@ -7,6 +7,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import torch
 import torch.nn as nn
+from scipy.interpolate import interp1d
 
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 
@@ -16,11 +17,12 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 100  # 训练数据集的轮次
+EPOCHS = 1  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 
 N_CLASSES = 12
-Z_DIM = 100
+NOISE_DIM = 100
+DATASET_LENGTH = 500  # 数据集总长度
 
 
 class Generator(nn.Module):
@@ -28,11 +30,11 @@ class Generator(nn.Module):
     pure Generator structure
     '''
 
-    def __init__(self, n_classes, channels=1):
+    def __init__(self, n_classes, channels=3):
 
         super(Generator, self).__init__()
         self.channels = channels
-        self.label_embedding_dim = Z_DIM
+        self.label_embedding_dim = NOISE_DIM
         self.n_classes = n_classes
 
         self.label_embedding = nn.Embedding(
@@ -40,54 +42,61 @@ class Generator(nn.Module):
         self.linear = nn.Linear(self.label_embedding_dim, 768)
 
         self.deconv1 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=768, out_channels=384, kernel_size=4, stride=1,
-                               padding=0, bias=False),
+            # (Lin​−1)×stride+kernel_size
+            nn.ConvTranspose1d(in_channels=768, out_channels=384, kernel_size=32, stride=1,
+                               padding=0, bias=False),  # out=32
             nn.BatchNorm1d(384),
             nn.ReLU(True)
         )
 
         self.deconv2 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=384, out_channels=256, kernel_size=4, stride=2,
-                               padding=1, bias=False),
+            nn.ConvTranspose1d(in_channels=384, out_channels=256, kernel_size=32, stride=1,
+                               padding=0, bias=False),  # 94
             nn.BatchNorm1d(256),
             nn.ReLU(True)
         )
 
         self.deconv3 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=256, out_channels=192, kernel_size=4, stride=2,
-                               padding=1, bias=False),
+            nn.ConvTranspose1d(in_channels=256, out_channels=192, kernel_size=32, stride=2,
+                               padding=0, bias=False),
             nn.BatchNorm1d(192),
             nn.ReLU(True),
         )
 
         self.deconv4 = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=192, out_channels=64, kernel_size=4, stride=2,
-                               padding=1, bias=False),
+            nn.ConvTranspose1d(in_channels=192, out_channels=64, kernel_size=32, stride=2,
+                               padding=0, bias=False),
             nn.BatchNorm1d(64),
             nn.ReLU(True)
         )
 
         self.last = nn.Sequential(
-            nn.ConvTranspose1d(in_channels=64, out_channels=self.channels, kernel_size=4, stride=2,
-                               padding=1, bias=False),
+            nn.ConvTranspose1d(in_channels=64, out_channels=self.channels, kernel_size=32, stride=4,
+                               padding=0, bias=False),  # 341*4+4=1200
             nn.Tanh()
         )
 
     def forward(self, z, labels):
         label_emb = self.label_embedding(labels)
         gen_input = torch.mul(label_emb, z)
-
         out = self.linear(gen_input)
-        out = out.view(-1, 768, 1, 1)
-
+        out = out.view(-1, 768, 1)
         out = self.deconv1(out)
         out = self.deconv2(out)
         out = self.deconv3(out)
         out = self.deconv4(out)
-
         out = self.last(out)  # (*, c, 64, 64)
 
+        out = torch.nn.functional.interpolate(
+            out, size=TIME_SERIES_LENGTH, mode='linear')
         return out
+
+    def generate(self, sample_type):
+        z = torch.randn(1, NOISE_DIM)  # *, 100
+        label = torch.tensor(SUPPORTED_SAMPLE_TYPES.index(
+            sample_type), dtype=torch.long)
+        result = self.forward(z, label)
+        return result
 
 
 class Discriminator(nn.Module):
@@ -95,7 +104,7 @@ class Discriminator(nn.Module):
     pure discriminator structure
     '''
 
-    def __init__(self, n_classes, channels=1):
+    def __init__(self, n_classes, channels=3):
         super(Discriminator, self).__init__()
         self.channels = channels
         self.n_classes = n_classes
@@ -155,12 +164,12 @@ class Discriminator(nn.Module):
         # (*, 512, 8, 8)
         # dis fc
         self.last_adv = nn.Sequential(
-            nn.Linear(450*512, 1),
+            nn.Linear(150*512, 1),
             nn.Sigmoid()
         )
         # aux classifier fc
         self.last_aux = nn.Sequential(
-            nn.Linear(450*512, self.n_classes),
+            nn.Linear(150*512, self.n_classes),
             nn.Softmax(dim=1)
         )
 
@@ -196,13 +205,17 @@ def weights_init(m):
 
 generator = Generator(n_classes=N_CLASSES).to(DEVICE)
 discriminator = Discriminator(n_classes=N_CLASSES).to(DEVICE)
+print(generator)
+print(discriminator)
 
 generator.apply(weights_init)
 discriminator.apply(weights_init)
 
 # optimizer
-generator_optimizer = torch.optim.Adam(generator.parameters(), lr=1e-4)
-discriminator_optimizer = torch.optim.Adam(discriminator.parameters(), lr=1e-4)
+generator_optimizer = torch.optim.Adam(
+    generator.parameters(), lr=LEARNING_RATE)
+discriminator_optimizer = torch.optim.Adam(
+    discriminator.parameters(), lr=LEARNING_RATE)
 
 # for orignal gan loss function
 adversarial_loss_sigmoid = nn.BCEWithLogitsLoss()
@@ -218,6 +231,7 @@ def compute_acc(real_aux, fake_aux, labels, gen_labels):
     # Calculate discriminator accuracy
     pred = np.concatenate([real_aux.data.cpu().numpy(),
                           fake_aux.data.cpu().numpy()], axis=0)
+    #print(labels, gen_labels)
     gt = np.concatenate(
         [labels.data.cpu().numpy(), gen_labels.data.cpu().numpy()], axis=0)
     d_acc = np.mean(np.argmax(pred, axis=1) == gt)
@@ -232,8 +246,8 @@ def train(data_loader):
         for i, (real_timeseries, labels) in enumerate(data_loader):
             # configure input
             real_timeseries = tensor2var(real_timeseries)
-            print(real_timeseries.shape)
-            labels = tensor2var(labels)
+            #print("real shape", real_timeseries.shape)
+            labels = tensor2var(labels).long()
 
             # adversarial ground truths
             valid = tensor2var(torch.full(
@@ -254,12 +268,13 @@ def train(data_loader):
                 dis_out_real, valid) + aux_loss(aux_out_real, labels)
 
             # noise z for generator
-            z = tensor2var(torch.randn(
-                real_timeseries.size(0), Z_DIM))  # *, 100
+            noise = tensor2var(torch.randn(
+                real_timeseries.size(0), NOISE_DIM))  # *, 100
             gen_labels = tensor2var(torch.randint(
                 0, N_CLASSES, (real_timeseries.size(0),), dtype=torch.long))
 
-            fake_timeseries = generator(z, gen_labels)  # (*, c, 64, 64)
+            fake_timeseries = generator(noise, gen_labels)  # (*, c, 64, 64)
+            #print("fake shape", fake_timeseries.shape)
             dis_out_fake, aux_out_fake = discriminator(fake_timeseries)  # (*,)
 
             d_loss_fake = adversarial_loss_sigmoid(
@@ -281,7 +296,7 @@ def train(data_loader):
                 # =================== Train G and gumbel =====================
                 generator.zero_grad()
                 # create random noise
-                fake_timeseries = generator(z, gen_labels)
+                fake_timeseries = generator(noise, gen_labels)
 
                 # compute loss with fake images
                 dis_out_fake, aux_out_fake = discriminator(
@@ -321,21 +336,19 @@ def get_sample(type):
     time_series = []
     for type in SERIES_TO_ENCODE:
         result = parse(temp[type][1])
-        time_series += list(result)  # concat操作
+        time_series.append(list(result))  # concat操作
     return time_series
 
 
 def generate_dataset():
     """生成数据集"""
-    DATASET_LENGTH = 100  # 数据集总长度
     x, y = [], []
     for _ in range(DATASET_LENGTH):
         type = random.choice(SUPPORTED_SAMPLE_TYPES)
         time_series = get_sample(type)
-        x.append([time_series])
+        x.append(time_series)
         index = SUPPORTED_SAMPLE_TYPES.index(type)
-        y.append([0] * index + [1] + [0] *
-                 (len(SUPPORTED_SAMPLE_TYPES) - index - 1))
+        y.append(index)
     return x, y
 
 
@@ -346,7 +359,7 @@ def get_dataloader():
                requires_grad=True), DATASET)  # 转换为tensor
 
     x, y = x.to(DEVICE), y.to(DEVICE)
-    print(x.shape, y.shape)
+    print("dataset shape", x.shape, y.shape)
     ds = TensorDataset(x, y)
     return DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True)
 
@@ -364,3 +377,6 @@ def draw(y, title=""):
 if __name__ == '__main__':
     dataloader = get_dataloader()
     train(dataloader)
+    t = generator.generate("normal")
+    print(t, t.shape)
+    draw(t, "normal")

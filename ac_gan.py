@@ -12,12 +12,12 @@ import torch.nn as nn
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 
 
-BATCH_SIZE = 64  # 每批处理的数据
+BATCH_SIZE = 32  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 50  # 训练数据集的轮次
+EPOCHS = 100  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
 
 N_CLASSES = 12  # 分类数

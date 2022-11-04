@@ -27,32 +27,55 @@ class LSTMGenerator(nn.Module):
         self.hidden_dim = hidden_dim
         self.out_dim = out_dim
 
-        self.label_embedding = nn.Embedding(
-            N_CLASSES, NOISE_DIM*len(SERIES_TO_ENCODE))
-        self.label_linear = nn.Linear(NOISE_DIM, 768)
+        self.label_embeddings = nn.ModuleList()
+        self.label_linears = nn.ModuleList()
+        self.lstms = nn.ModuleList()
+        self.output_linears = nn.ModuleList()
 
-        self.lstm = nn.LSTM(768, hidden_dim, n_layers, batch_first=True)
-        self.linear = nn.Sequential(
-            nn.Linear(hidden_dim, out_dim),
-            nn.Tanh()
-        )
+        for _ in range(len(SERIES_TO_ENCODE)):  # 生成器的输入是多个通道，分开处理以便适用所有情况
+            temp_label_embedding = nn.Embedding(
+                N_CLASSES, NOISE_DIM)
+            self.label_embeddings.append(temp_label_embedding)
+
+            FEATURE_DIM = 128
+
+            temp_label_linear = nn.Sequential(
+                nn.Linear(NOISE_DIM, FEATURE_DIM),
+            )
+            self.label_linears.append(temp_label_linear)
+
+            temp_lstm = nn.LSTM(FEATURE_DIM, hidden_dim,
+                                n_layers, batch_first=True)
+            self.lstms.append(temp_lstm)
+
+            temp_output_linear = nn.Sequential(
+                nn.Linear(hidden_dim, out_dim)
+            )
+            self.output_linears.append(temp_output_linear)
 
     def forward(self, noise, labels):
         batch_size = labels.size(0)
-        h_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
-        c_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
 
-        label_emb = self.label_embedding(labels)
-        label_emb = label_emb.view(
-            batch_size, len(SERIES_TO_ENCODE), NOISE_DIM)
-        gen_input = torch.mul(label_emb, noise)
-        out = self.label_linear(gen_input)
+        result = torch.tensor([], dtype=torch.float32)
+        for index, lstm in enumerate(self.lstms):
+            label_emb = self.label_embeddings[index](labels)
+            temp_noise = noise[:, index, :]  # 按第二个维度取
 
-        recurrent_features, _ = self.lstm(out, (h_0, c_0))
-        outputs = self.linear(recurrent_features.contiguous().view(
-            batch_size*len(SERIES_TO_ENCODE), self.hidden_dim))
-        outputs = outputs.view(batch_size, len(SERIES_TO_ENCODE), self.out_dim)
-        return outputs
+            gen_input = torch.mul(label_emb, temp_noise)  # 和噪声融合
+
+            out = self.label_linears[index](gen_input)  # 再经过一个线性层映射开
+            out = out.unsqueeze(1)  # 增加一个维度
+
+            h_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
+            c_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
+
+            recurrent_features, _ = lstm(out, (h_0, c_0))
+            outputs = recurrent_features.contiguous().view(batch_size, self.hidden_dim)
+
+            outputs = self.output_linears[index](outputs)
+            result = torch.cat((result, outputs.unsqueeze(1)), dim=1)
+
+        return result
 
     def generate(self, sample_type):
         noise = torch.randn(1, len(SERIES_TO_ENCODE), NOISE_DIM)
@@ -73,27 +96,44 @@ class LSTMDiscriminator(nn.Module):
     Output: sequence of shape (batch_size, seq_len, 1)
     """
 
-    def __init__(self, in_dim, n_layers=1, hidden_dim=256):
+    def __init__(self, in_dim=1, n_layers=1, hidden_dim=256):
         super().__init__()
         self.n_layers = n_layers
         self.hidden_dim = hidden_dim
+        self.lstms = nn.ModuleList()
 
-        self.lstm = nn.LSTM(in_dim, hidden_dim, n_layers, batch_first=True)
-        self.linear = nn.Sequential(
-            nn.Linear(hidden_dim*len(SERIES_TO_ENCODE), N_CLASSES),
+        for _ in range(len(SERIES_TO_ENCODE)):
+            temp = nn.LSTM(input_size=in_dim, hidden_size=hidden_dim,
+                           num_layers=n_layers, batch_first=True)
+            self.lstms.append(temp)
+
+        input_length = len(SERIES_TO_ENCODE)*hidden_dim
+        self.classification = nn.Sequential(
+            nn.Linear(input_length, input_length//2),
+            nn.Linear(input_length//2, N_CLASSES),
             nn.Softmax(dim=1)
         )
 
     def forward(self, input):
         batch_size = input.size(0)
-        h_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
-        c_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim)
 
-        recurrent_features, _ = self.lstm(input, (h_0, c_0))
-        # 后两个维度合起来
-        temp = recurrent_features.contiguous().view(
-            batch_size, -1)
-        outputs = self.linear(temp)
+        result = torch.tensor([], dtype=torch.float32)
+        for index, lstm in enumerate(self.lstms):
+            h_0 = torch.zeros(self.n_layers, batch_size,
+                              self.hidden_dim)  # lstm的hidden state权重矩阵
+            c_0 = torch.zeros(self.n_layers, batch_size,
+                              self.hidden_dim)  # lstm的cell state权重矩阵
+
+            # 取第i个channel
+            input_i = input[:, index, :]
+            # [Batch Size, SeriesLength] -》 [Batch Size, SeriesLength, 1]
+            input_i = input_i.unsqueeze(2)
+            recurrent_features, _ = lstm(input_i, (h_0, c_0))
+            # 取最后一个时刻的输出
+            temp = recurrent_features[:, -1, :]
+            # 将所有通道输出拼接起来 [Batch Size, lstm output dim*len(SERIES_TO_ENCODE)]
+            result = torch.cat((result, temp), dim=1)
+        outputs = self.classification(result)
         return outputs
 
     def classifiy(self, input):
@@ -101,18 +141,16 @@ class LSTMDiscriminator(nn.Module):
 
 
 generator = LSTMGenerator(TIME_SERIES_LENGTH)
-discriminator = LSTMDiscriminator(TIME_SERIES_LENGTH)
+discriminator = LSTMDiscriminator()
 
-discriminator_loss = nn.BCELoss().to(DEVICE)
-generator_loss = nn.MSELoss().to(DEVICE)
+
+#mse_loss = nn.MSELoss().to(DEVICE)
+ce_loss = nn.CrossEntropyLoss().to(DEVICE)
 
 discriminator_optimizer = torch.optim.Adam(
     discriminator.parameters(), lr=LEARNING_RATE)
 generator_optimizer = torch.optim.Adam(
     generator.parameters(), lr=LEARNING_RATE)
-
-real_label = 1
-fake_label = 0
 
 
 def train(dataloader):
@@ -128,7 +166,8 @@ def train(dataloader):
             real = real_timeseries.to(DEVICE)
 
             output = discriminator(real)
-            errD_real = discriminator_loss(output, label)
+            errD_real = ce_loss(output, label)
+            errD_real.backward(retain_graph=True)
             D_x = output.mean().item()
 
             # Train with fake data
@@ -141,28 +180,29 @@ def train(dataloader):
 
             fake_timeseries = generator(noise, fake_labels)
             output = discriminator(fake_timeseries)
-            errD_fake = discriminator_loss(output, one_hot_labels)
+            errD_fake = ce_loss(output, one_hot_labels)
+            errD_fake.backward(retain_graph=True)
 
             D_G_z1 = output.mean().item()
-            errD = errD_real + errD_fake
-            errD.backward(retain_graph=True)
             discriminator_optimizer.step()
+            #errD = errD_real + errD_fake
 
             ############################
             # (2) Update G network
             ###########################
-            generator.zero_grad()
-            output = discriminator(fake_timeseries)
-            errG = discriminator_loss(output, one_hot_labels)
-            errG.backward()
-            D_G_z2 = output.mean().item()
+            if epoch % 3 == 0:
+                generator.zero_grad()
+                output = discriminator(fake_timeseries)
+                errG = ce_loss(output, one_hot_labels)
+                errG.backward()
+                D_G_z2 = output.mean().item()
 
-            generator_optimizer.step()
+                generator_optimizer.step()
 
             # Report metrics
-            print('[%d/%d][%d/%d] Loss_D: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
+            print('[%d/%d][%d/%d] Loss_D_REAL: %.4f Loss_D_FAKE: %.4f Loss_G: %.4f D(x): %.4f D(G(z)): %.4f / %.4f'
                   % (epoch, EPOCHS, i, len(dataloader),
-                     errD.item(), errG.item(), D_x, D_G_z1, D_G_z2))
+                     errD_real.item(), errD_fake.item(), errG.item(), D_x, D_G_z1, D_G_z2))
 
         ##### End of the epoch #####
 
@@ -183,6 +223,8 @@ if __name__ == "__main__":
     gen_out = generator(noise, torch.randint(
         0, N_CLASSES, (BATCH_SIZE,), dtype=torch.long))
     print("Generator output: ", gen_out.size())
+    # gen_out = torch.randn(BATCH_SIZE, len(
+    #    SERIES_TO_ENCODE), TIME_SERIES_LENGTH)
     dis_out = discriminator(gen_out)
     print("Discriminator output: ", dis_out.size())"""
 

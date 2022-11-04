@@ -17,12 +17,12 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 1000  # 训练数据集的轮次
+EPOCHS = 50  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
 
 N_CLASSES = 12  # 分类数
 NOISE_DIM = 100  # 噪声维度
-DATASET_LENGTH = 50  # 数据集总长度
+DATASET_LENGTH = 500  # 数据集总长度
 TIME_SERIES_DURATION = 20  # 20s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
 SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power曲线
@@ -33,7 +33,7 @@ class Generator(nn.Module):
     pure Generator structure
     '''
 
-    def __init__(self, n_classes, channels=3):
+    def __init__(self, n_classes, channels=len(SERIES_TO_ENCODE)):
 
         super(Generator, self).__init__()
         self.channels = channels
@@ -109,7 +109,7 @@ class Discriminator(nn.Module):
     pure discriminator structure
     '''
 
-    def __init__(self, n_classes, channels=3):
+    def __init__(self, n_classes, channels=len(SERIES_TO_ENCODE)):
         super(Discriminator, self).__init__()
         self.channels = channels
         self.n_classes = n_classes
@@ -204,8 +204,8 @@ def weights_init(m):
 
 generator = Generator(n_classes=N_CLASSES).to(DEVICE)
 discriminator = Discriminator(n_classes=N_CLASSES).to(DEVICE)
-print(generator)
-print(discriminator)
+# print(generator)
+# print(discriminator)
 
 generator.apply(weights_init)  # 初始化权重
 discriminator.apply(weights_init)  # 初始化权重
@@ -334,7 +334,7 @@ def get_sample(type):
     return time_series
 
 
-def generate_dataset():
+def generate_dataset(use_onehot):
     """生成数据集"""
     x, y = [], []
     for _ in range(DATASET_LENGTH):
@@ -342,12 +342,15 @@ def generate_dataset():
         time_series = get_sample(type)
         x.append(time_series)
         index = SUPPORTED_SAMPLE_TYPES.index(type)
-        y.append(index)
+        if use_onehot:
+            y.append(np.eye(N_CLASSES)[index])
+        else:
+            y.append(index)
     return x, y
 
 
-def get_dataloader():
-    DATASET = generate_dataset()
+def get_dataloader(use_onehot=False):
+    DATASET = generate_dataset(use_onehot)
 
     x, y = map(lambda a: torch.tensor(np.array(a), dtype=torch.float,
                requires_grad=True), DATASET)  # 转换为tensor

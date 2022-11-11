@@ -67,7 +67,7 @@ def parse(i):
         result[type] = polish_data(
             t["data"], t["point_count"], type)  # 解析数据
     # print(result)
-    show_sample(result)
+    # show_sample(result)
     return result
 
 
@@ -97,4 +97,13 @@ def get_sample():
 
 
 if __name__ == "__main__":
-    get_sample()
+    import os
+    import sys
+    parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    sys.path.insert(0, parentdir)
+
+    from segmentation import calc_segmentation_points
+
+    t = get_sample()
+    calc_segmentation_points(t[0])
+    show_sample(t[0])

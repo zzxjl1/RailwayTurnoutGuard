@@ -1,3 +1,6 @@
+"""
+读取excel表格中的现实世界数据并打包为sample
+"""
 import numpy as np
 try:
     from sensor.utils import show_sample, interpolate

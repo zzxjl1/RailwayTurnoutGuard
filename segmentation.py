@@ -2,8 +2,7 @@
 对曲线进行分割，得到分段点
 """
 from matplotlib import pyplot as plt
-from sklearn.ensemble import IsolationForest
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, add_noise, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 

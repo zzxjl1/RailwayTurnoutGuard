@@ -1,6 +1,5 @@
 
 import pandas as pd
-from extract_features import calc_features
 from sensor import interpolate, generate_power_series, show_sample
 from dnn_classification import get_label_from_result_pretty, predict, BP_Net, FusedFuzzyDeepNet, FuzzyLayer
 

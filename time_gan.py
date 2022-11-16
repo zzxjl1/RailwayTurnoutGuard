@@ -8,11 +8,12 @@ import torch
 import torch.nn as nn
 
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor.dataset import generate_dataset
 
 
 class GRUNet(nn.Module):
     def __init__(
-        self, input_dim, hidden_dim, output_dim, n_layers, max_seq_len, use_activation,device
+        self, input_dim, hidden_dim, output_dim, n_layers, max_seq_len, use_activation, device
     ):
         super(GRUNet, self).__init__()
         self.hidden_dim = hidden_dim
@@ -101,6 +102,7 @@ class RecurrentNetwork:
         out = self.network.forward(X, T)
         return out
 
+
 def extract_time(data):
     """Returns Maximum sequence length and each sequence length.
 
@@ -118,7 +120,8 @@ def extract_time(data):
         time.append(len(data[i][:, 0]))
 
     return time, max_seq_len
-        
+
+
 def random_generator(batch_size, z_dim, T_mb, max_seq_len):
     """Random vector generation.
 
@@ -139,21 +142,27 @@ def random_generator(batch_size, z_dim, T_mb, max_seq_len):
         Z_mb.append(temp_Z)
     return Z_mb
 
+
 class TimeSeriesDataLoader:
-    def __init__(self, sample_type,device) -> None:
+    def __init__(self, sample_type, device) -> None:
         super().__init__()
         self.device = device
         assert sample_type in SUPPORTED_SAMPLE_TYPES
         self.data_dir = os.path.join(os.path.dirname(__file__), "../data")
-        
-        data = generate_dataset(sample_type)
-        data = data.transpose(0,2,1)
 
-        self.data, self.min_val, self.max_val = self.MinMaxScaler(np.asarray(data))
+        data, _ = generate_dataset(dataset_length=DATASET_LENGTH,
+                                   time_series_length=TIME_SERIES_LENGTH,
+                                   type=sample_type,
+                                   pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                                   series_to_encode=SERIES_TO_ENCODE)
+        data = data.transpose(0, 2, 1)
+
+        self.data, self.min_val, self.max_val = self.MinMaxScaler(
+            np.asarray(data))
         self.num_obs, self.seq_len, self.dim = self.data.shape
         self.get_time()
 
-        print("dataset shape:",self.data.shape)
+        print("dataset shape:", self.data.shape)
 
     def MinMaxScaler(self, data):
         """
@@ -194,7 +203,8 @@ class TimeSeriesDataLoader:
         idx = [i for i in range(self.num_obs)]
         random.shuffle(idx)
         idx = idx[:batch_size]
-        batch_data = np.take(np.array(self.data, dtype=np.float32), idx, axis=0)
+        batch_data = np.take(
+            np.array(self.data, dtype=np.float32), idx, axis=0)
         batch_data_T = np.take(np.array(self.T, dtype=np.float32), idx, axis=0)
         return (
             torch.from_numpy(batch_data).to(self.device),
@@ -216,7 +226,7 @@ class TimeSeriesDataLoader:
 
 class TimeGAN:
     def __init__(self, parameters):
-        
+
         self.parameters = parameters
         self.device = self.parameters["device"]
         self.use_wgan = self.parameters["use_wgan"]
@@ -228,7 +238,8 @@ class TimeGAN:
         self.batch_size = self.parameters["batch_size"]
         self.sequence_length = self.parameters["sequence_length"]
         self.sample_type = self.parameters["sample_type"]
-        self.dataloader = TimeSeriesDataLoader(self.sample_type,self.device) if self.sample_type else None
+        self.dataloader = TimeSeriesDataLoader(
+            self.sample_type, self.device) if self.sample_type else None
 
         if self.dataloader:
             self.max_seq_length = self.dataloader.max_seq_len
@@ -251,10 +262,12 @@ class TimeGAN:
         self.file_storage()
 
     def file_storage(self):
-        save_dir = os.path.join(os.path.dirname(__file__), ("./models/time_gan"))
+        save_dir = os.path.join(os.path.dirname(
+            __file__), ("./models/time_gan"))
         if not os.path.isdir(save_dir):
             os.makedirs(save_dir)
-        self.model_save_path = os.path.join(save_dir, f"{self.sample_type}.pth")
+        self.model_save_path = os.path.join(
+            save_dir, f"{self.sample_type}.pth")
 
     def save_model(self):
         print("Saving model...")
@@ -272,10 +285,14 @@ class TimeGAN:
 
     def load_model(self, path):
         check_point = torch.load(path)
-        self.embedder.network.load_state_dict(check_point["embedder_state_dict"])
-        self.recovery.network.load_state_dict(check_point["recovery_state_dict"])
-        self.supervisor.network.load_state_dict(check_point["supervisor_state_dict"])
-        self.generator.network.load_state_dict(check_point["generator_state_dict"])
+        self.embedder.network.load_state_dict(
+            check_point["embedder_state_dict"])
+        self.recovery.network.load_state_dict(
+            check_point["recovery_state_dict"])
+        self.supervisor.network.load_state_dict(
+            check_point["supervisor_state_dict"])
+        self.generator.network.load_state_dict(
+            check_point["generator_state_dict"])
         self.discriminator.network.load_state_dict(
             check_point["discriminator_state_dict"]
         )
@@ -381,7 +398,8 @@ class TimeGAN:
             E_loss_0 = 10 * torch.sqrt(self.loss_mse(X, X_tilde))
             E_loss_0.backward()
             self.E0_solver.step()
-            print("EPOCH:{} embedder_recovery_error:{}".format(i, str(E_loss_0.item())))
+            print("EPOCH:{} embedder_recovery_error:{}".format(
+                i, str(E_loss_0.item())))
         print("Traning Embedder and Recovery Networks complete")
 
     def supervisor_training(self):
@@ -419,7 +437,8 @@ class TimeGAN:
 
                 G_loss_U = self.loss_bce(Y_fake, torch.ones_like(Y_fake))
                 G_loss_U_e = self.loss_bce(Y_fake_e, torch.ones_like(Y_fake_e))
-                G_loss_S = self.loss_mse(H[:, 1:, :], H_hat_supervise[:, :-1, :])
+                G_loss_S = self.loss_mse(
+                    H[:, 1:, :], H_hat_supervise[:, :-1, :])
 
                 # Two Momments
                 G_loss_V1 = torch.mean(
@@ -428,7 +447,8 @@ class TimeGAN:
                         - torch.sqrt(X.var(dim=0, unbiased=False) + 1e-6)
                     )
                 )
-                G_loss_V2 = torch.mean(torch.abs((X_hat.mean(dim=0)) - (X.mean(dim=0))))
+                G_loss_V2 = torch.mean(
+                    torch.abs((X_hat.mean(dim=0)) - (X.mean(dim=0))))
                 G_loss_V = G_loss_V1 + G_loss_V2
 
                 G_loss = (
@@ -445,15 +465,18 @@ class TimeGAN:
                 H_hat_supervise = self.supervisor(H, T)
                 X_tilde = self.recovery(H, T)
 
-                G_loss_S = self.loss_mse(H[:, 1:, :], H_hat_supervise[:, :-1, :])
+                G_loss_S = self.loss_mse(
+                    H[:, 1:, :], H_hat_supervise[:, :-1, :])
                 E_loss_0 = 10 * torch.sqrt(self.loss_mse(X, X_tilde))
 
                 E_loss = E_loss_0 + 0.1 * G_loss_S
                 E_loss.backward()
                 self.E_solver.step()
 
-                print("EPOCH:{} joint_generator_error {}".format(i * 2 + kk, str(G_loss.item())))
-                print("EPOCH:{} joint_embedder_recovery_error:{}".format(i * 2 + kk, str(E_loss.item())))
+                print("EPOCH:{} joint_generator_error {}".format(
+                    i * 2 + kk, str(G_loss.item())))
+                print("EPOCH:{} joint_embedder_recovery_error:{}".format(
+                    i * 2 + kk, str(E_loss.item())))
 
             X, T = self.dataloader.get_x_t(self.batch_size)
             Z = self.dataloader.get_z(self.batch_size, T)
@@ -475,7 +498,8 @@ class TimeGAN:
                 D_loss.backward()
                 self.D_solver.step()
 
-            print("EPOCH:{} joint_discriminator_error:{}".format(i, str(D_loss.item())))
+            print("EPOCH:{} joint_discriminator_error:{}".format(
+                i, str(D_loss.item())))
         print("Joint Network training complete")
 
     def joint_training_wgan(self):
@@ -498,7 +522,8 @@ class TimeGAN:
 
                 G_loss_U = -torch.mean(Y_fake)
                 G_loss_U_e = -torch.mean(Y_fake_e)
-                G_loss_S = self.loss_mse(H[:, 1:, :], H_hat_supervise[:, :-1, :])
+                G_loss_S = self.loss_mse(
+                    H[:, 1:, :], H_hat_supervise[:, :-1, :])
 
                 # Two Momments
                 G_loss_V1 = torch.mean(
@@ -507,7 +532,8 @@ class TimeGAN:
                         - torch.sqrt(X.var(dim=0, unbiased=False) + 1e-6)
                     )
                 )
-                G_loss_V2 = torch.mean(torch.abs((X_hat.mean(dim=0)) - (X.mean(dim=0))))
+                G_loss_V2 = torch.mean(
+                    torch.abs((X_hat.mean(dim=0)) - (X.mean(dim=0))))
                 G_loss_V = G_loss_V1 + G_loss_V2
 
                 G_loss = (
@@ -524,15 +550,18 @@ class TimeGAN:
                 H_hat_supervise = self.supervisor(H, T)
                 X_tilde = self.recovery(H, T)
 
-                G_loss_S = self.loss_mse(H[:, 1:, :], H_hat_supervise[:, :-1, :])
+                G_loss_S = self.loss_mse(
+                    H[:, 1:, :], H_hat_supervise[:, :-1, :])
                 E_loss_0 = 10 * torch.sqrt(self.loss_mse(X, X_tilde))
 
                 E_loss = E_loss_0 + 0.1 * G_loss_S
                 E_loss.backward()
                 self.E_solver.step()
 
-                print("EPOCH:{} joint_generator_error:{}".format(i * 2 + kk, str(G_loss.item())))
-                print("EPOCH:{} joint_embedder_recovery_error:{}".format(i * 2 + kk, str(E_loss.item())))
+                print("EPOCH:{} joint_generator_error:{}".format(
+                    i * 2 + kk, str(G_loss.item())))
+                print("EPOCH:{} joint_embedder_recovery_error:{}".format(
+                    i * 2 + kk, str(E_loss.item())))
 
             X, T = self.dataloader.get_x_t(self.batch_size)
             Z = self.dataloader.get_z(self.batch_size, T)
@@ -557,15 +586,17 @@ class TimeGAN:
             for p in self.discriminator.network.parameters():
                 p.data.clamp_(-self.c, self.c)
 
-            print("EPOCH:{} joint_discriminator_error:{}".format(i, str(D_loss.item())))
+            print("EPOCH:{} joint_discriminator_error:{}".format(
+                i, str(D_loss.item())))
         print("Joint Network training complete")
 
-    def synthetic_data_generation(self,num,seq_len):
+    def synthetic_data_generation(self, num, seq_len):
         T = [seq_len for _ in range(num)]
         T_mb = list(map(int, T))
         Z = torch.from_numpy(
             np.asarray(
-                random_generator(num, self.ip_dimension, T_mb, self.max_seq_length),
+                random_generator(num, self.ip_dimension,
+                                 T_mb, self.max_seq_length),
                 dtype=np.float32,
             )
         ).to(self.device)
@@ -604,43 +635,10 @@ class TimeGAN:
             self.save_model()
 
 
-def draw(x,title=""):
+def draw(x, title=""):
     plt.plot(x)
     plt.title(title)
     plt.show()
-
-def parse(time_series):
-    # 超长的截断，短的补0
-    if len(time_series) > TIME_SERIES_LENGTH:
-        return np.array(
-            time_series[:TIME_SERIES_LENGTH])
-    else:
-        return np.pad(
-            time_series, (0, TIME_SERIES_LENGTH - len(time_series)), 'constant')
-
-
-def get_sample(type):
-    """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, _ = generate_sample(type=type)
-    time_series = []
-    for type in SERIES_TO_ENCODE:
-        result = parse(temp[type][1])
-        result = result[::POOLING_FACTOR_PER_TIME_SERIES]
-        time_series.append(result)
-    result = np.array(time_series)
-    return result
-
-
-def generate_dataset(type):
-    """生成数据集"""
-    x = []
-    for _ in range(DATASET_LENGTH):
-        time_series = get_sample(type)
-        x.append(time_series)
-    return np.array(x)
-
-
-
 
 
 DATASET_LENGTH = 5000  # 数据集总长度
@@ -652,37 +650,42 @@ POOLING_FACTOR_PER_TIME_SERIES = 10  # 每个时间序列的池化因子,用于�
 EPOCHS = 10000  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
+FORCE_CPU = True  # 强制使用CPU
 
 model_params = {
-    "device":torch.device("cuda" if torch.cuda.is_available() else "cpu"),
-    "hidden_dim":120,
-    "num_layer":3,
-    "iterations":EPOCHS,
-    "batch_size":BATCH_SIZE,
-    "sequence_length":TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES,
-    "learning_rate":LEARNING_RATE,
-    "use_wgan":False,
+    "device": torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu"),
+    "hidden_dim": 120,
+    "num_layer": 3,
+    "iterations": EPOCHS,
+    "batch_size": BATCH_SIZE,
+    "sequence_length": TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES,
+    "learning_rate": LEARNING_RATE,
+    "use_wgan": False,
     "sample_type": None,
     "channels": len(SERIES_TO_ENCODE)
-    }
+}
 
-def generate(type,num=1):
+
+def generate(type, num=1):
     max_val_range_dict = {
-        "F1":(0.3,0.5),
-        "F2":(0,0.01)
+        "F1": (0.3, 0.5),
+        "F2": (0, 0.01)
     }
-    model_params["max_val_range"] = max_val_range_dict[type] if type in max_val_range_dict else (4.5,5.5)
+    model_params["max_val_range"] = max_val_range_dict[type] if type in max_val_range_dict else (
+        4.5, 5.5)
     model = TimeGAN(model_params)
     file_path = f"./models/time_gan/{type}.pth"
-    assert os.path.exists(file_path) , "model not exists, please train() first!"
+    assert os.path.exists(file_path), "model not exists, please train() first!"
     model.load_model(file_path)
-    fake_data = model.synthetic_data_generation(num,TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES)
+    fake_data = model.synthetic_data_generation(
+        num, TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES)
     result = np.array(fake_data)
-    result = result.transpose(0,2,1)
+    result = result.transpose(0, 2, 1)
     print(result.shape)
 
     for i in range(result.shape[1]):
-        draw(result[0][i],"generated")
+        draw(result[0][i], "generated")
+
 
 def train(type):
     model_params["sample_type"] = type
@@ -694,5 +697,5 @@ if __name__ == "__main__":
     for type in SUPPORTED_SAMPLE_TYPES:
         train(type)
 
-        #print(type)
-        #generate(type)
+        # print(type)
+        generate(type)

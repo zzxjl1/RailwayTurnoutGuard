@@ -25,7 +25,7 @@ LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
 EPOCHS = 300  # 训练轮数
 
-FILENAME = './models/auto_encoder.pth'  # 模型保存路径
+FILE_PATH = './models/auto_encoder.pth'  # 模型保存路径
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
@@ -117,13 +117,13 @@ def train():
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
         print(epoch, val_loss)
 
-    torch.save(model, FILENAME)  # 保存模型
+    torch.save(model, FILE_PATH)  # 保存模型
 
 
 def predict(x):
-    if not os.path.exists(FILENAME):
+    if not os.path.exists(FILE_PATH):
         train()
-    model = torch.load(FILENAME)
+    model = torch.load(FILE_PATH)
     model.eval()
     with torch.no_grad():
         return model(x)

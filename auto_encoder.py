@@ -20,6 +20,7 @@ TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 时间序列长度
 TRAINING_SET_LENGTH = 200  # 训练集长度
 TESTING_SET_LENGTH = 50  # 测试集长度
 SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂时不用
+CHANNELS = len(SERIES_TO_ENCODE)
 
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
@@ -31,8 +32,7 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
 
-TOTAL_LENGTH = TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES * \
-    len(SERIES_TO_ENCODE)  # 输入总长度
+TOTAL_LENGTH = TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES * CHANNELS  # 输入总长度
 print("total input length:", TOTAL_LENGTH)
 
 model = nn.Sequential(
@@ -107,13 +107,21 @@ def predict(x):
 
 
 def draw(y_before, y_after, title=""):
-    plt.plot(y_before)
-    plt.plot(y_after)
-    # x轴n等分，画竖线
-    for i in range(len(SERIES_TO_ENCODE)+1):
-        plt.axvline(x=TIME_SERIES_LENGTH //
-                    POOLING_FACTOR_PER_TIME_SERIES*(i), color='r')
-    plt.title(title)
+    y_before = y_before.view(CHANNELS, -1)
+    y_after = y_after.view(CHANNELS, -1)
+    figure, (axes) = plt.subplots(CHANNELS, 1, figsize=(12, 5), dpi=150)
+    for i in range(CHANNELS):
+        ax = axes[i]
+        ax.plot(y_before[i], label="original")
+        ax.plot(y_after[i], label="AutoEncoder result")
+        ax.set_title(f"Channel: {SERIES_TO_ENCODE[i]}")
+        ax.set_xlim(0, None)
+        ax.set_ylim(bottom=0, top=5)
+
+    figure.suptitle(title)
+    lines, labels = figure.axes[-1].get_legend_handles_labels()
+    figure.legend(lines, labels, loc='upper right')
+    figure.set_tight_layout(True)
     plt.show()
 
 
@@ -128,19 +136,20 @@ def test(type="normal", show_plt=False):
     y_after = predict(y_before)
     loss = loss_func(y_after, y_before)
     if show_plt:
-        draw(y_before, y_after, type)
+        draw(y_before, y_after, f"Sample type: {type}")
     return loss.item()
 
 
 if __name__ == "__main__":
     train()
     test_cycle = 1
+    show_plt = True
     results = {}
     for type in SUPPORTED_SAMPLE_TYPES:
-        result = [test(type, show_plt=True) for _ in range(test_cycle)]
+        result = [test(type, show_plt) for _ in range(test_cycle)]
         results[type] = np.mean(result)
     print(results)
     plt.bar(range(len(results)), results.values(),
             tick_label=list(results.keys()))
-    plt.title("abnormal weights")
+    plt.title("AutoEncoder similarity to normal sample result")
     plt.show()

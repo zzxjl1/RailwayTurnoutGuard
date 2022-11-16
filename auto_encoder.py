@@ -44,10 +44,10 @@ loss_func = nn.MSELoss()  # 均方误差
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
 
 
-def get_dataloader():
+def get_dataloader(type):
     temp, _ = generate_dataset(dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
                                time_series_length=TIME_SERIES_LENGTH,
-                               type="normal",
+                               type=type,
                                pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
                                series_to_encode=SERIES_TO_ENCODE)
 
@@ -79,8 +79,8 @@ def loss_batch(model, x, is_train):
     return loss.item(), len(x)
 
 
-def train():
-    train_dl, test_dl = get_dataloader()
+def train(type="normal"):
+    train_dl, test_dl = get_dataloader(type)
     for epoch in range(EPOCHS):
         model.train()
         for i, (x,) in enumerate(train_dl):

@@ -161,6 +161,6 @@ if __name__ == "__main__":
         print(sample.keys())
         name = "A"
         series = sample[name]
-        calc_segmentation_points_single_series(
+        result = calc_segmentation_points_single_series(
             series, name=f"{type} {name}", show_plt=True)
-        print(segmentations)
+        print("🎁comparison", segmentations, result)

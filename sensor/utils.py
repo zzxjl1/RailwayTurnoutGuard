@@ -22,6 +22,8 @@ def tansform_to_plt(points):
 
 def find_nearest(array, value):
     """找到最近的点，返回索引"""
+    if value is None:
+        return None
     array = np.asarray(array)
     idx = (np.abs(array - value)).argmin()
     return idx

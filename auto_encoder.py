@@ -12,11 +12,11 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor.dataset import generate_dataset, get_sample
 
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的采样点数
 TIME_SERIES_DURATION = 10  # 输入模型的时间序列时长为10s
-TIME_SERIES_LENGTH = SAMPLE_RATE * \
-    TIME_SERIES_DURATION//POOLING_FACTOR_PER_TIME_SERIES  # 时间序列长度
+TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 时间序列长度
 TRAINING_SET_LENGTH = 200  # 训练集长度
 TESTING_SET_LENGTH = 50  # 测试集长度
 SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂时不用
@@ -31,7 +31,8 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
 
-TOTAL_LENGTH = TIME_SERIES_LENGTH * len(SERIES_TO_ENCODE)  # 输入总长度
+TOTAL_LENGTH = TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES * \
+    len(SERIES_TO_ENCODE)  # 输入总长度
 print("total input length:", TOTAL_LENGTH)
 
 model = nn.Sequential(
@@ -43,42 +44,17 @@ loss_func = nn.MSELoss()  # 均方误差
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
 
 
-def parse(time_series):
-    # 降采样
-    time_series = time_series[::POOLING_FACTOR_PER_TIME_SERIES]
-    # 超长的截断，短的补0
-    if len(time_series) > TIME_SERIES_LENGTH:
-        return np.array(
-            time_series[:TIME_SERIES_LENGTH])
-    else:
-        return np.pad(
-            time_series, (0, TIME_SERIES_LENGTH - len(time_series)), 'constant')
-
-
-def get_sample(type):
-    """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, _ = generate_sample(type=type)
-    time_series = []
-    for type in SERIES_TO_ENCODE:
-        result = parse(temp[type][1])
-        time_series += list(result)  # concat操作
-    return time_series
-
-
-def generate_dataset():
-    """生成数据集"""
-    DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH  # 数据集总长度
-    DATASET = []
-    for _ in range(DATASET_LENGTH):
-        time_series = get_sample("normal")  # 必须只用正常样本训练
-        DATASET.append(time_series)
-    return DATASET
-
-
 def get_dataloader():
-    temp = generate_dataset()
-    DATASET = torch.tensor(np.array(temp), dtype=torch.float,
+    temp, _ = generate_dataset(dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
+                               time_series_length=TIME_SERIES_LENGTH,
+                               type="normal",
+                               pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                               series_to_encode=SERIES_TO_ENCODE)
+
+    DATASET = torch.tensor(temp, dtype=torch.float,
                            requires_grad=True).to(DEVICE)  # 转换为tensor
+    # 通道合并
+    DATASET = DATASET.view(-1, TOTAL_LENGTH)
     print(DATASET.shape)
     train_ds = TensorDataset(DATASET[:TRAINING_SET_LENGTH])
     test_ds = TensorDataset(DATASET[TRAINING_SET_LENGTH:])
@@ -107,15 +83,16 @@ def train():
     train_dl, test_dl = get_dataloader()
     for epoch in range(EPOCHS):
         model.train()
-        for x in train_dl:
-            loss_batch(model, x[0], is_train=True)
+        for i, (x,) in enumerate(train_dl):
+            loss_batch(model, x, is_train=True)
 
         model.eval()
         with torch.no_grad():
             losses, nums = zip(
-                *[loss_batch(model, x[0], is_train=False) for x in test_dl])
+                *[loss_batch(model, x, is_train=False) for (x,) in test_dl])
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
-        print(epoch, val_loss)
+        print('Epoch [{}/{}], Validation_Loss: {}'
+              .format(epoch + 1, EPOCHS, val_loss))
 
     torch.save(model, FILE_PATH)  # 保存模型
 
@@ -134,16 +111,20 @@ def draw(y_before, y_after, title=""):
     plt.plot(y_after)
     # x轴n等分，画竖线
     for i in range(len(SERIES_TO_ENCODE)+1):
-        plt.axvline(x=TIME_SERIES_LENGTH*(i), color='r')
-    plt.axvline(x=TIME_SERIES_LENGTH, color='r', linestyle='--')
+        plt.axvline(x=TIME_SERIES_LENGTH //
+                    POOLING_FACTOR_PER_TIME_SERIES*(i), color='r')
     plt.title(title)
     plt.show()
 
 
 def test(type="normal", show_plt=False):
     """生成一个正常样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
-    y = get_sample(type)
+    y, _ = get_sample(time_series_length=TIME_SERIES_LENGTH,
+                      type=type,
+                      pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                      series_to_encode=SERIES_TO_ENCODE)
     y_before = torch.tensor(y, dtype=torch.float).to(DEVICE)
+    y_before = y_before.view(TOTAL_LENGTH)
     y_after = predict(y_before)
     loss = loss_func(y_after, y_before)
     if show_plt:

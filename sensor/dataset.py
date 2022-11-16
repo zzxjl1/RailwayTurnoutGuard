@@ -1,10 +1,13 @@
+import random
 import numpy as np
 
 
 try:
+    from sensor.config import SUPPORTED_SAMPLE_TYPES
     from sensor.simulate import generate_sample
     from sensor.utils import find_nearest
 except:
+    from config import SUPPORTED_SAMPLE_TYPES
     from simulate import generate_sample
     from utils import find_nearest
 
@@ -20,9 +23,10 @@ def parse(time_series, time_series_length):
 
 
 def get_sample(time_series_length, type, pooling_factor_per_time_series, series_to_encode):
-    """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, segmentations = generate_sample(
-        type=type if type else np.random.choice(series_to_encode))
+    """生成一个样本"""
+    if type is None:
+        type = random.choice(SUPPORTED_SAMPLE_TYPES)
+    temp, segmentations = generate_sample(type)
 
     time_series = []
     seg_index = []
@@ -30,9 +34,10 @@ def get_sample(time_series_length, type, pooling_factor_per_time_series, series_
         x, y = temp[name][0], temp[name][1]
         result = parse(y, time_series_length)
         result = result[::pooling_factor_per_time_series]
+        x = parse(x, time_series_length)
         x = x[::pooling_factor_per_time_series]
+        assert len(x) == len(result)
         time_series.append(result)
-
         seg_index = [find_nearest(x, seg) for seg in segmentations]
         # print(seg_index)
 
@@ -54,6 +59,6 @@ def generate_dataset(dataset_length, time_series_length, type=None, pooling_fact
 if __name__ == "__main__":
     BATCH_SIZE = 10
     TIME_SERIES_LENGTH = 100
-    t, seg_index = generate_dataset(BATCH_SIZE, TIME_SERIES_LENGTH, type="normal",
+    t, seg_index = generate_dataset(BATCH_SIZE, TIME_SERIES_LENGTH, type=None,
                                     pooling_factor_per_time_series=2, series_to_encode=["A", "B", "C"])
     print(t.shape, seg_index)

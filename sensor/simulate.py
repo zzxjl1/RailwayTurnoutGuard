@@ -109,18 +109,18 @@ def generate_single_current(durations, values, phase_name, type="normal"):
         "H2": {
             "start": find_nearest(x, segmentations[0]),
             "end": find_nearest(x, segmentations[1]),
-            "noise_level": 0.4,
+            "noise_level": 0.3,
             "percentage": 0.2
         },
         "H4": {
             "start": find_nearest(x, segmentations[0]),
             "end": find_nearest(x, segmentations[1]),
-            "noise_level": (0.4, 0.7),
+            "noise_level": (0.3, 0.6),
             "percentage": 0.05},
         "H5": {
             "start": find_nearest(x, segmentations[1]),
             "end": len(x),
-            "noise_level": 0.4,
+            "noise_level": 0.3,
             "percentage": 0.2},
     }  # 几种故障的波动特征，后面需要对其加入噪声来模拟
 
@@ -254,10 +254,12 @@ def generate_current_series(type="normal", show_plt=False):
     """产生三相电流曲线"""
     durations, values = generate_durations_and_values(type)  # 生成模拟需要用到的参数
     current_results = {}
+    time_elipsed = 0
     for phase in ["A", "B", "C"]:
         result = generate_single_current(
             durations, values, phase, type)  # 生成单相电流曲线
         current_results[phase] = result
+        time_elipsed = result[0][-1]  # 计算总用时
         if show_plt:  # debug usage
             plt.plot(*result, label=f"Phase {phase}")
     print("durations: ", durations)
@@ -267,7 +269,18 @@ def generate_current_series(type="normal", show_plt=False):
         plt.xlabel("Time(s)")
         plt.ylabel("Current(A)")
         plt.show()
-    return current_results, values["segmentations"]
+
+    segmentations = values["segmentations"]
+    if type == "F1":
+        segmentations = time_elipsed - \
+            durations["stage3_end_zeros_duration"], None
+    if type == "F2":
+        segmentations = None, None
+    if type in "F4":
+        segmentations[1] = time_elipsed - \
+            durations["stage3_end_zeros_duration"]
+
+    return current_results, segmentations
 
 
 def generate_sample(type="normal", show_plt=False):

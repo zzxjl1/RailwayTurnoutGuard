@@ -10,18 +10,19 @@ from torch.utils.data import TensorDataset
 from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
-from sensor.config import SAMPLE_RATE
+from sensor.config import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
 from sensor.dataset import generate_dataset
 
 
 class GRUScore(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, device, num_layers=1):
+    def __init__(self, input_size, hidden_size, output_size, device, num_layers=1, dropout=0):
         super(GRUScore, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
+        self.dropout = dropout
         self.device = device
         self.gru = nn.GRU(input_size, hidden_size,
-                          num_layers, batch_first=True)
+                          num_layers, batch_first=True, dropout=self.dropout)
         self.fc = nn.Linear(hidden_size, output_size)
         self.activation = nn.ReLU()
 
@@ -65,25 +66,27 @@ TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，�
 SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power曲线
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
 
-EPOCHS = 100  # 训练数据集的轮次
+EPOCHS = 200  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available()
                       and not FORCE_CPU else 'cpu')
 CHANNELS = len(SERIES_TO_ENCODE)  # 通道数
+TRAIN_ONLY_WITH_NORMAL = True  # 只用正常数据训练（！经测试，使用故障样本训练会无法收敛！）
 
 
 def get_dataloader():
-    x, seg_index = generate_dataset(DATASET_LENGTH, TIME_SERIES_LENGTH, type="normal",
-                                    pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES, series_to_encode=SERIES_TO_ENCODE)
-    batch_size, channels, seq_len = x.shape
+    x, seg_indexs = generate_dataset(DATASET_LENGTH, TIME_SERIES_LENGTH, type="normal" if TRAIN_ONLY_WITH_NORMAL else None,
+                                     pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES, series_to_encode=SERIES_TO_ENCODE)
+    dataset_length, channels, seq_len = x.shape
     x = x.transpose(0, 2, 1)
     x = torch.from_numpy(x).float()
     # y的shape是(数据集长度,时间序列长度,1)
-    y = torch.zeros((batch_size, seq_len)).float()
+    y = torch.zeros((DATASET_LENGTH, seq_len)).float()
     for i in range(DATASET_LENGTH):
-        y[i, seg_index[i]] = 1
+        seg_index = [x for x in seg_indexs[i] if x is not None]
+        y[i, seg_index] = 1
         # print(seg_index[i])
     y = y.unsqueeze(2)
     print(x.shape, y.shape)
@@ -112,13 +115,15 @@ def train():
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
-            if (i + 1) % 1 == 0:
-                print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'
-                      .format(epoch + 1, EPOCHS, i + 1, len(dataloader), loss.item()))
+            print('Epoch [{}/{}], Step [{}/{}], Loss: {:.4f}'
+                  .format(epoch + 1, EPOCHS, i + 1, len(dataloader), loss.item()))
+
     torch.save(model, FILE_PATH)
 
 
 def predict(t) -> np.ndarray:
+    batch_size, channels, seq_len = t.shape
+    assert channels == CHANNELS
     assert os.path.exists(FILE_PATH), "please train() first"
     model = torch.load(FILE_PATH)
     input = t.transpose(0, 2, 1)
@@ -128,11 +133,14 @@ def predict(t) -> np.ndarray:
     return out
 
 
-def test():
-    t, seg_indexs = generate_dataset(1, TIME_SERIES_LENGTH, type="normal",
-                                     pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES, series_to_encode=SERIES_TO_ENCODE)
+def test(type="normal"):
+    t, seg_indexs = generate_dataset(dataset_length=1,
+                                     time_series_length=TIME_SERIES_LENGTH,
+                                     type=type,
+                                     pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                                     series_to_encode=SERIES_TO_ENCODE)
     out = predict(t)
-    fig = plt.figure()
+    fig = plt.figure(dpi=150, figsize=(9, 2))
     ax1 = fig.subplots()
     ax2 = ax1.twinx()
     #ax2.plot(out.squeeze(), label="score")
@@ -144,10 +152,13 @@ def test():
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
     plt.legend(lines + lines2, labels + labels2, loc='best')  # 显示图例
+    plt.title("Segmentation GRU Score Heatmap - type: {}".format(type))
+    ax1.set_yticks([])  # 不显示y轴
+    ax2.yaxis.tick_left()  # ax2在左边
     plt.show()
 
 
 if __name__ == "__main__":
     train()
-
-    test()
+    for type in SUPPORTED_SAMPLE_TYPES:
+        test(type)

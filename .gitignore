@@ -3,3 +3,4 @@ __pycache__
 ~$paper.xlsx
 .vscode
 sensor/~$turnoutActionCurve.xlsx
+sensor/__pycache__

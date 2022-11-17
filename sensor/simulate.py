@@ -240,7 +240,7 @@ def generate_durations_and_values(type="normal"):
         durations["stage3_decrease_duration"] = 0
     elif type == "F4":
         """Current and power rise in Stage 2"""
-        durations["stage3_stable_duration"] = random_float(18, 22)
+        durations["stage3_stable_duration"] = random_float(10, 15)
         values["stage2_final_val"] = values["stage1_final_val"] + \
             random_float(0.3, 0.6)
     elif type == "F5":

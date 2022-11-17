@@ -111,6 +111,8 @@ def train_all():
 
 
 def predict(x):
+    assert len(
+        x) == TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES * CHANNELS
     results = {}
     losses = {}
     for type in SUPPORTED_SAMPLE_TYPES:
@@ -197,7 +199,7 @@ if __name__ == "__main__":
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))
-    test_cycles = 1
+    test_cycles = 5
     for i in range(test_cycles):
         matrix += np.array(get_result_matrix())
     matrix = matrix / test_cycles

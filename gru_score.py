@@ -3,6 +3,7 @@
 这个模型的输出会用于和原文中的分割算法结合，提升分割的准确性
 RNN对序列敏感，因此能够捕捉到stage切换间的变化
 """
+from sensor.dataset import parse_sample
 import os
 from matplotlib import pyplot as plt
 import numpy as np
@@ -12,18 +13,23 @@ import torch
 import torch.nn as nn
 from sensor.config import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
 from sensor.dataset import generate_dataset
+from sensor.utils import find_nearest
 
 
 class GRUScore(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, device, num_layers=1, dropout=0):
+    def __init__(self, input_size, hidden_size, output_size, device, num_layers=1, dropout=0.5):
         super(GRUScore, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.dropout = dropout
         self.device = device
         self.gru = nn.GRU(input_size, hidden_size,
-                          num_layers, batch_first=True, dropout=self.dropout)
-        self.fc = nn.Linear(hidden_size, output_size)
+                          num_layers, batch_first=True, dropout=self.dropout if num_layers > 1 else 0)
+        self.fc = nn.Sequential(
+            nn.Linear(hidden_size, output_size*3),
+            nn.Linear(output_size*3, output_size*2),
+            nn.Linear(output_size*2, output_size),
+        )
         self.activation = nn.ReLU()
 
         self.init_weights()
@@ -73,7 +79,7 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available()
                       and not FORCE_CPU else 'cpu')
 CHANNELS = len(SERIES_TO_ENCODE)  # 通道数
-TRAIN_ONLY_WITH_NORMAL = True  # 只用正常数据训练（！经测试，使用故障样本训练会无法收敛！）
+TRAIN_ONLY_WITH_NORMAL = False  # 只用正常数据训练（！经测试，使用故障样本训练会无法收敛！）
 
 
 def get_dataloader():
@@ -123,14 +129,17 @@ def train():
 
 def predict(t) -> np.ndarray:
     batch_size, channels, seq_len = t.shape
+    assert batch_size == 1
     assert channels == CHANNELS
+    assert seq_len == TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES
     assert os.path.exists(FILE_PATH), "please train() first"
+
     model = torch.load(FILE_PATH)
     input = t.transpose(0, 2, 1)
     input = torch.from_numpy(input).float()
     out = model(input)
     out = out.detach().cpu().numpy()
-    return out
+    return out.squeeze()
 
 
 def test(type="normal"):
@@ -158,7 +167,41 @@ def test(type="normal"):
     plt.show()
 
 
+def get_score_by_time(out, sec):
+    x, y = model_output_to_xy(out)
+    index = find_nearest(x, sec)
+    return y[index]
+
+
+def time_to_index(sec):
+    return int(sec * SAMPLE_RATE // POOLING_FACTOR_PER_TIME_SERIES)
+
+
+def model_output_to_xy(out, end_sec=None):
+    x = np.arange(0, TIME_SERIES_DURATION, TIME_SERIES_DURATION/len(out))
+    y = out
+    if end_sec:
+        index = time_to_index(end_sec)
+        x = x[:index]
+        y = y[:index]
+    return x, y
+
+
+def model_input_parse(sample):
+    """
+    将样本转换为模型输入的格式
+    """
+    result, _ = parse_sample(sample,
+                             segmentations=None,
+                             time_series_length=TIME_SERIES_LENGTH,
+                             pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                             series_to_encode=SERIES_TO_ENCODE)
+    result = result.reshape(1, CHANNELS, TIME_SERIES_LENGTH //
+                            POOLING_FACTOR_PER_TIME_SERIES)
+    return result
+
+
 if __name__ == "__main__":
-    train()
+    # train()
     for type in SUPPORTED_SAMPLE_TYPES:
         test(type)

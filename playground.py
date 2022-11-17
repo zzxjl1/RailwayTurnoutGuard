@@ -1,5 +1,5 @@
 """pca lda demo"""
-from dnn_classification import generate_data
+from bp_classification import generate_data
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis

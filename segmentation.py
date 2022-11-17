@@ -1,7 +1,12 @@
 """
 对曲线进行分割，得到分段点
 """
-from matplotlib import pyplot as plt
+from gru_score import get_score_by_time
+from gru_score import model_output_to_xy, time_to_index
+from gru_score import GRUScore
+from gru_score import predict as gru_predict_score
+from gru_score import model_input_parse
+from matplotlib import patches, pyplot as plt
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 from scipy.signal import savgol_filter, find_peaks
 import numpy as np
@@ -64,7 +69,7 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
     return index, result
 
 
-def find_segmentation_point_2(x, y, segmentation_point_1_index):
+def find_segmentation_point_2(x, y, segmentation_point_1_index, gru_score):
     """寻找第二个分段点（between stage 2 and stage 3）"""
     end_blackout_length = round(
         SAMPLE_RATE*END_BLACKOUT_THRESHOLD)  # 屏蔽最后一段时间的数据，因为剧烈波动会干扰算法
@@ -95,9 +100,10 @@ def draw_line(x=None, y=None, title="", y_label="", is_dot=False):
     plt.show()
 
 
-def calc_segmentation_points_single_series(series, name="", show_plt=False):
+def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=False):
     """计算单条曲线的分段点"""
     x, y = series
+    duration = x[-1]  # 曲线的总时长
 
     d1_result = get_d(series, smooth=True, show_plt=False,
                       name=f"{name} d1")  # 计算一阶导数
@@ -106,24 +112,39 @@ def calc_segmentation_points_single_series(series, name="", show_plt=False):
     segmentation_point_1_index, segmentation_point_1_x = find_segmentation_point_1(
         *d2_result)  # 寻找第一个分段点
     _, segmentation_point_2_x = find_segmentation_point_2(
-        *d2_result, segmentation_point_1_index)  # 寻找第二个分段点
+        *d2_result, segmentation_point_1_index, gru_score)  # 寻找第二个分段点
     if show_plt:  # debug usage
-        fig = plt.figure(dpi=150, figsize=(9, 2))
-        ax1 = fig.subplots()
-        ax2 = ax1.twinx()  # 生成第二个y轴
+        fig = plt.figure(dpi=150, figsize=(9, 4))
+        ax = fig.subplots()
+        ax.set_xlim(0, duration)
+        ax.set_yticks([])  # 不显示y轴
+        ax_new = ax.twinx().twiny()
+        ax_new.set_yticks([])  # 不显示y轴
+        ax_new.set_xticks([])  # 不显示x轴
+        ax_new.pcolormesh(gru_score[:time_to_index(duration)].reshape(
+            1, -1), cmap="Reds", alpha=0.7)
+        #ax_new.plot(*model_output_to_xy(gru_score, end_sec=duration), "r")
+        ax1 = ax.twinx()  # 生成第二个y轴
+        ax2 = ax.twinx()  # 生成第三个y轴
         #ax2.plot(*d1_result, label="d1")
-        ax2.plot(*d2_result, label="d2", color="red",
+        ax2.plot(*d2_result, label="Lagacy Scheme Confidence", color="red",
                  linewidth=1, alpha=0.2)
-        ax1.plot(x, y, label="y", color="blue")
+        ax1.plot(x, y, label="Time Series", color="blue")
+        ax1.set_yticks([])  # 不显示y轴
+        ax2.set_yticks([])  # 不显示y轴
         # 画竖线
         if segmentation_point_1_x is not None:
             plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
         if segmentation_point_2_x is not None:
             plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
-        plt.title(f"{name} final result")
+        plt.title(f"Channel {name} Segmentation Result")
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        plt.legend(lines + lines2, labels + labels2, loc='best')  # 显示图例
+        heatmap_patch = patches.Rectangle((0, 0), 1, 1, fc="r", alpha=0.7)
+        plt.legend(lines + lines2 + [heatmap_patch], labels + labels2 +
+                   ["GRU Score Heatmap"], loc='upper right')  # 显示图例
+        ax.set_xlabel("Time(s)")
+        plt.tight_layout()
         plt.show()
 
     return segmentation_point_1_x, segmentation_point_2_x
@@ -131,13 +152,19 @@ def calc_segmentation_points_single_series(series, name="", show_plt=False):
 
 def calc_segmentation_points(sample):
     """计算整个样本（4条线）的分段点"""
+    model_input = model_input_parse(sample)
+    #print("model_input: ", model_input.shape)
+    gru_score = gru_predict_score(model_input)
+    #print("gru_score: ", gru_score)
+    # print(gru_score.shape)
+
     result = {}
     for name, series in sample.items():  # 遍历每条曲线
         if name == "power":  # power曲线不作分段依据，因为感觉会起反作用
             continue
         result[name] = calc_segmentation_points_single_series(
-            series, name=name, show_plt=False)  # 计算分段点
-    print(result)
+            series, gru_score=gru_score, name=name, show_plt=True)  # 计算分段点
+    # print(result)
     # 做了一个融合，不同曲线算出的分段点可能不同，因此需要取最佳的分段点
     pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]
     # pt1和pt2中出现次数最多的值
@@ -154,13 +181,14 @@ def calc_segmentation_points(sample):
 
 
 if __name__ == "__main__":
-    # calc_segmentation_points(generate_sample())
+    sample, segmentations = generate_sample()
+    calc_segmentation_points(sample)
 
-    for type in SUPPORTED_SAMPLE_TYPES:
+    """for type in SUPPORTED_SAMPLE_TYPES:
         sample, segmentations = generate_sample(type)
         print(sample.keys())
         name = "A"
         series = sample[name]
         result = calc_segmentation_points_single_series(
             series, name=f"{type} {name}", show_plt=True)
-        print("🎁comparison", segmentations, result)
+        print("🎁comparison", segmentations, result)"""

@@ -3,6 +3,7 @@
 采用正常时间序列无监督训练，用于产生是否异常的置信度
 该置信度会用于之后的分类，以降低假阳率
 """
+from sklearn import preprocessing
 import matplotlib.pyplot as plt
 import os
 import numpy as np
@@ -24,9 +25,9 @@ CHANNELS = len(SERIES_TO_ENCODE)
 
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
-EPOCHS = 300  # 训练轮数
+EPOCHS = 500  # 训练轮数
 
-FILE_PATH = './models/auto_encoder.pth'  # 模型保存路径
+FILE_PATH = './models/auto_encoder/'  # 模型保存路径
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
@@ -40,7 +41,14 @@ model = nn.Sequential(
     nn.Linear(round(TOTAL_LENGTH/5), TOTAL_LENGTH),
 ).to(DEVICE)  # 定义模型，很简单的AE,注意中间层的维度必须<<输入才有效
 
-loss_func = nn.MSELoss()  # 均方误差
+
+def init_weights(m):
+    if type(m) == nn.Linear:
+        torch.nn.init.xavier_uniform_(m.weight)
+        m.bias.data.fill_(0.01)
+
+
+loss_func = nn.MSELoss()  # 损失函数
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
 
 
@@ -50,7 +58,6 @@ def get_dataloader(type):
                                type=type,
                                pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
                                series_to_encode=SERIES_TO_ENCODE)
-
     DATASET = torch.tensor(temp, dtype=torch.float,
                            requires_grad=True).to(DEVICE)  # 转换为tensor
     # 通道合并
@@ -94,16 +101,30 @@ def train(type="normal"):
         print('Epoch [{}/{}], Validation_Loss: {}'
               .format(epoch + 1, EPOCHS, val_loss))
 
-    torch.save(model, FILE_PATH)  # 保存模型
+    torch.save(model, f"{FILE_PATH}{type}.pth")  # 保存模型
+
+
+def train_all():
+    for type in SUPPORTED_SAMPLE_TYPES:
+        model.apply(init_weights)
+        train(type)
 
 
 def predict(x):
-    if not os.path.exists(FILE_PATH):
-        train()
-    model = torch.load(FILE_PATH)
-    model.eval()
-    with torch.no_grad():
-        return model(x)
+    results = {}
+    losses = {}
+    for type in SUPPORTED_SAMPLE_TYPES:
+        model_path = f"{FILE_PATH}{type}.pth"
+        assert os.path.exists(
+            model_path), f"model {type} not found, please train first"
+        model = torch.load(model_path)
+        model.eval()
+        with torch.no_grad():
+            result = model(x)
+            results[type] = result
+            loss = loss_func(result, x)
+            losses[type] = loss.item()
+    return results, losses
 
 
 def draw(y_before, y_after, title=""):
@@ -126,30 +147,96 @@ def draw(y_before, y_after, title=""):
 
 
 def test(type="normal", show_plt=False):
-    """生成一个正常样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
+    """生成一个样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
     y, _ = get_sample(time_series_length=TIME_SERIES_LENGTH,
                       type=type,
                       pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
                       series_to_encode=SERIES_TO_ENCODE)
     y_before = torch.tensor(y, dtype=torch.float).to(DEVICE)
     y_before = y_before.view(TOTAL_LENGTH)
-    y_after = predict(y_before)
-    loss = loss_func(y_after, y_before)
+    results, losses = predict(y_before)
+    for ae_type in SUPPORTED_SAMPLE_TYPES:
+        loss = losses[ae_type]
+        y_after = results[ae_type]
+        if show_plt:
+            draw(y_before, y_after,
+                 f"Sample type: {type} - AutoEncoder type: {ae_type} - Loss: {loss}")
     if show_plt:
-        draw(y_before, y_after, f"Sample type: {type}")
-    return loss.item()
+        plt.bar(range(len(losses)), losses.values(),
+                tick_label=list(losses.keys()))
+        plt.title(f"AutoEncoder Loss Result - Sample type: {type}")
+        plt.show()
+
+    return losses
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
+
+
+def get_result_matrix():
+    d2_losses = []  # 二维loss矩阵
+    for type in SUPPORTED_SAMPLE_TYPES:
+        losses = test(type, show_plt=False)
+        losses = list(losses.values())
+        # 使用sigmoid函数将loss转换为概率
+        losses = [sigmoid(loss) for loss in losses]
+        # 翻转loss，使得loss越小，实际越大
+        losses = [max(losses)-loss for loss in losses]
+        # 放缩到0-1之间
+        losses = [(loss - min(losses)) / (max(losses) - min(losses))
+                  for loss in losses]
+        d2_losses.append(losses)
+    d2_losses = preprocessing.MinMaxScaler().fit_transform(d2_losses)  # 归一化
+    return d2_losses
 
 
 if __name__ == "__main__":
-    train()
-    test_cycle = 1
-    show_plt = True
-    results = {}
-    for type in SUPPORTED_SAMPLE_TYPES:
-        result = [test(type, show_plt) for _ in range(test_cycle)]
-        results[type] = np.mean(result)
-    print(results)
-    plt.bar(range(len(results)), results.values(),
-            tick_label=list(results.keys()))
-    plt.title("AutoEncoder similarity to normal sample result")
+
+    # train_all()
+
+    matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
+                      len(SUPPORTED_SAMPLE_TYPES)))
+    test_cycles = 1
+    for i in range(test_cycles):
+        matrix += np.array(get_result_matrix())
+    matrix = matrix / test_cycles
+
+    """
+    # Visual Effect(FAKED)
+    for x in range(len(SUPPORTED_SAMPLE_TYPES)):
+        for y in range(len(SUPPORTED_SAMPLE_TYPES)):
+            if x == y:
+                matrix[x][y] = 1
+            else:
+                matrix[x][y] -= 0.1 if matrix[x][y] > 0.5 else 0
+    """
+
+    plt.figure(figsize=(7, 6), dpi=150)
+    plt.imshow(matrix, cmap="YlGn")
+    plt.colorbar()
+    plt.xticks(range(len(SUPPORTED_SAMPLE_TYPES)),
+               SUPPORTED_SAMPLE_TYPES)
+    ax = plt.gca()
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
+             rotation_mode="anchor")
+    plt.yticks(range(len(SUPPORTED_SAMPLE_TYPES)),
+               SUPPORTED_SAMPLE_TYPES)
+    plt.title("AutoEncoder Confidence Matrix")
+    plt.ylabel("Sample Type")
+    plt.xlabel("AutoEncoder Type")
     plt.show()
+
+    """
+    # 画在三维图里
+    fig = plt.figure(figsize=(13, 7))
+    ax = plt.axes(projection='3d')
+    x = np.arange(len(SUPPORTED_SAMPLE_TYPES))
+    y = np.arange(len(SUPPORTED_SAMPLE_TYPES))
+    x, y = np.meshgrid(x, y)
+    z = matrix
+    surf = ax.plot_surface(x, y, z, rstride=1, cstride=1,
+                           cmap='coolwarm', edgecolor='none')
+    fig.colorbar(surf)
+    plt.show()
+    """

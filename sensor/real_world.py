@@ -71,7 +71,7 @@ def parse(i):
     return result
 
 
-def get_sample():
+def get_all_samples():
     result = []
     row = df.shape[0]  # 总行数
     i = 0
@@ -105,7 +105,12 @@ if __name__ == "__main__":
 
     from gru_score import GRUScore
     from segmentation import calc_segmentation_points
+    from auto_encoder import model_input_parse, predict, visualize_prediction_result
 
-    t = get_sample()
-    calc_segmentation_points(t[0])
-    show_sample(t[0])
+    for sample in get_all_samples():
+        show_sample(sample)
+        calc_segmentation_points(sample, show_plt=True)  # 计算分割点
+
+        model_input = model_input_parse(sample)
+        results, losses = predict(model_input)
+        visualize_prediction_result(model_input, results, losses)

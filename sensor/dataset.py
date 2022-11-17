@@ -45,27 +45,19 @@ def parse_sample(sample, segmentations, time_series_length, pooling_factor_per_t
     return result, seg_index
 
 
-def get_sample_array(time_series_length, type, pooling_factor_per_time_series, series_to_encode):
-    """生成一个样本数组,shape为(channels, time_series_length//pooling_factor_per_time_series)"""
-    if type is None:
-        type = random.choice(SUPPORTED_SAMPLE_TYPES)
-    sample, segmentations = generate_sample(type)
-    time_series, seg_index = parse_sample(sample,
-                                          segmentations,
-                                          time_series_length,
-                                          pooling_factor_per_time_series,
-                                          series_to_encode)
-    return time_series, seg_index
-
-
 def generate_dataset(dataset_length, time_series_length, type=None, pooling_factor_per_time_series=1, series_to_encode=["A", "B", "C"]):
     """生成数据集"""
     x, seg_indexs = [], []
     for _ in range(dataset_length):
-        time_series, seg_index = get_sample_array(time_series_length,
-                                                  type,
-                                                  pooling_factor_per_time_series,
-                                                  series_to_encode)
+        if type is None:
+            type = random.choice(SUPPORTED_SAMPLE_TYPES)
+        sample, segmentations = generate_sample(type)
+        time_series, seg_index = parse_sample(sample,
+                                              segmentations,
+                                              time_series_length,
+                                              pooling_factor_per_time_series,
+                                              series_to_encode)
+
         x.append(time_series)
         seg_indexs.append(seg_index)
     return np.array(x), seg_indexs

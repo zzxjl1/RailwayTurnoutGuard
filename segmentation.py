@@ -9,7 +9,6 @@ from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
 SEGMENT_POINT_1_THRESHOLD = 30
-END_BLACKOUT_THRESHOLD = 0.1  # 计算分界点2时屏蔽最后X秒的数据，因为剧烈波动会干扰算法
 
 
 def get_d(s, smooth=True, show_plt=False, name=""):
@@ -68,11 +67,9 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
 
 def find_segmentation_point_2(x, y, segmentation_point_1_index, gru_score):
     """寻找第二个分段点（between stage 2 and stage 3）"""
-    end_blackout_length = round(
-        SAMPLE_RATE*END_BLACKOUT_THRESHOLD)  # 屏蔽最后一段时间的数据，因为剧烈波动会干扰算法
 
-    x, y = x[segmentation_point_1_index:-end_blackout_length],\
-        y[segmentation_point_1_index:-end_blackout_length]  # 切掉stage 1和最后屏蔽的数据
+    # 切掉stage 1
+    x, y = x[segmentation_point_1_index:], y[segmentation_point_1_index:]
     peak_idx, properties = find_peaks(y, prominence=0)  # 寻找峰值
     prominences = properties["prominences"]  # 峰值的详细参数
     assert len(peak_idx) == len(prominences)  # 峰值的个数和峰值的详细参数个数相同
@@ -158,7 +155,7 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
     return segmentation_point_1_x, segmentation_point_2_x
 
 
-def calc_segmentation_points(sample):
+def calc_segmentation_points(sample, show_plt=False):
     """计算整个样本（4条线）的分段点"""
     model_input = model_input_parse(sample)
     #print("model_input: ", model_input.shape)
@@ -171,7 +168,7 @@ def calc_segmentation_points(sample):
         if name == "power":  # power曲线不作分段依据，因为感觉会起反作用
             continue
         result[name] = calc_segmentation_points_single_series(
-            series, gru_score=gru_score, name=name, show_plt=False)  # 计算分段点
+            series, gru_score=gru_score, name=name, show_plt=show_plt)  # 计算分段点
     # print(result)
     # 做了一个融合，不同曲线算出的分段点可能不同，因此需要取最佳的分段点
     pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]

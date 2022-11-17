@@ -7,6 +7,7 @@ from segmentation import calc_segmentation_points, calc_segmentation_points_sing
 from sensor import SUPPORTED_SAMPLE_TYPES, find_nearest, generate_sample
 from collections import OrderedDict
 import matplotlib.pyplot as plt
+from gru_score import GRUScore
 
 
 def calc_features_per_stage(x, y, series_name, stage_name):

@@ -12,8 +12,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
-from sensor.dataset import generate_dataset, get_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
+from sensor.dataset import generate_dataset, get_sample_array
 
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的采样点数
 TIME_SERIES_DURATION = 10  # 输入模型的时间序列时长为10s
@@ -150,10 +150,10 @@ def draw(y_before, y_after, title=""):
 
 def test(type="normal", show_plt=False):
     """生成一个样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
-    y, _ = get_sample(time_series_length=TIME_SERIES_LENGTH,
-                      type=type,
-                      pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                      series_to_encode=SERIES_TO_ENCODE)
+    y, _ = get_sample_array(time_series_length=TIME_SERIES_LENGTH,
+                            type=type,
+                            pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                            series_to_encode=SERIES_TO_ENCODE)
     y_before = torch.tensor(y, dtype=torch.float).to(DEVICE)
     y_before = y_before.view(TOTAL_LENGTH)
     results, losses = predict(y_before)

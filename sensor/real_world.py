@@ -99,9 +99,11 @@ def get_sample():
 if __name__ == "__main__":
     import os
     import sys
+
     parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     sys.path.insert(0, parentdir)
 
+    from gru_score import GRUScore
     from segmentation import calc_segmentation_points
 
     t = get_sample()

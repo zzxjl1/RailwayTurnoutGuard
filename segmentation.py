@@ -1,18 +1,15 @@
 """
 对曲线进行分割，得到分段点
 """
-from gru_score import get_score_by_time
-from gru_score import model_output_to_xy, time_to_index
-from gru_score import GRUScore
+from gru_score import get_score_by_time, time_to_index, GRUScore, model_input_parse
 from gru_score import predict as gru_predict_score
-from gru_score import model_input_parse
 from matplotlib import patches, pyplot as plt
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
 from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
 SEGMENT_POINT_1_THRESHOLD = 30
-END_BLACKOUT_THRESHOLD = 0.2  # 计算分界点2时屏蔽最后X秒的数据，因为剧烈波动会干扰算法
+END_BLACKOUT_THRESHOLD = 0.1  # 计算分界点2时屏蔽最后X秒的数据，因为剧烈波动会干扰算法
 
 
 def get_d(s, smooth=True, show_plt=False, name=""):
@@ -78,12 +75,20 @@ def find_segmentation_point_2(x, y, segmentation_point_1_index, gru_score):
         y[segmentation_point_1_index:-end_blackout_length]  # 切掉stage 1和最后屏蔽的数据
     peak_idx, properties = find_peaks(y, prominence=0)  # 寻找峰值
     prominences = properties["prominences"]  # 峰值的详细参数
+    assert len(peak_idx) == len(prominences)  # 峰值的个数和峰值的详细参数个数相同
     if len(peak_idx) == 0 or len(prominences) == 0:  # 没有找到峰值，说明分段点不存在
         print("segmentation point 2 not found")
         return None, None
     #print("peak_point_available: ", np.array(x)[peak_idx])
-    index = np.argmax(prominences)  # 找到最大的峰值
-    result = x[peak_idx[index]]  # 峰值的x值（时间）
+    scores = []  # 用于存储每个峰值的分数
+    for i in range(len(prominences)):
+        sec = x[peak_idx[i]]  # 峰值的时间
+        score = get_score_by_time(gru_score, sec)  # 根据时间获取分数
+        scores.append(prominences[i] * score)
+        print(sec, prominences[i], score)
+    index = np.argmax(scores)  # 找到得分最高，返回第几个峰的索引
+    index = peak_idx[index]  # 点的索引
+    result = x[index]  # 峰值的x值（时间）
     #print("segmentation point 2: ", result)
     return index, result
 
@@ -134,15 +139,18 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
         ax2.set_yticks([])  # 不显示y轴
         # 画竖线
         if segmentation_point_1_x is not None:
-            plt.axvline(x=segmentation_point_1_x, color='r', linestyle='--')
+            plt.axvline(x=segmentation_point_1_x, color='r',
+                        linestyle='--', label="Segmentation Point")
         if segmentation_point_2_x is not None:
-            plt.axvline(x=segmentation_point_2_x, color='r', linestyle='--')
+            plt.axvline(x=segmentation_point_2_x, color='r',
+                        linestyle='--')
         plt.title(f"Channel {name} Segmentation Result")
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        heatmap_patch = patches.Rectangle((0, 0), 1, 1, fc="r", alpha=0.7)
-        plt.legend(lines + lines2 + [heatmap_patch], labels + labels2 +
-                   ["GRU Score Heatmap"], loc='upper right')  # 显示图例
+        heatmap_patch = patches.Rectangle(
+            (0, 0), 1, 1, fc="r", alpha=0.7)
+        plt.legend(lines+[heatmap_patch] + lines2, labels +
+                   ["GRU Score Heatmap"] + labels2, loc='upper right')  # 显示图例
         ax.set_xlabel("Time(s)")
         plt.tight_layout()
         plt.show()
@@ -163,7 +171,7 @@ def calc_segmentation_points(sample):
         if name == "power":  # power曲线不作分段依据，因为感觉会起反作用
             continue
         result[name] = calc_segmentation_points_single_series(
-            series, gru_score=gru_score, name=name, show_plt=True)  # 计算分段点
+            series, gru_score=gru_score, name=name, show_plt=False)  # 计算分段点
     # print(result)
     # 做了一个融合，不同曲线算出的分段点可能不同，因此需要取最佳的分段点
     pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]
@@ -181,14 +189,15 @@ def calc_segmentation_points(sample):
 
 
 if __name__ == "__main__":
-    sample, segmentations = generate_sample()
-    calc_segmentation_points(sample)
+    #sample, segmentations = generate_sample()
+    # calc_segmentation_points(sample)
 
-    """for type in SUPPORTED_SAMPLE_TYPES:
+    for type in SUPPORTED_SAMPLE_TYPES:
         sample, segmentations = generate_sample(type)
+        gru_score = gru_predict_score(model_input_parse(sample))
         print(sample.keys())
         name = "A"
         series = sample[name]
         result = calc_segmentation_points_single_series(
-            series, name=f"{type} {name}", show_plt=True)
-        print("🎁comparison", segmentations, result)"""
+            series, gru_score, name=f"{name} ({type}) ", show_plt=True)
+        print("🎁comparison", segmentations, result)

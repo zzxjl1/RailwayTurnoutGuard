@@ -4,7 +4,7 @@
 
 import random
 from segmentation import calc_segmentation_points, calc_segmentation_points_single_series
-from sensor import SUPPORTED_SAMPLE_TYPES, find_nearest, generate_sample
+from sensor import SUPPORTED_SAMPLE_TYPES, find_nearest, get_sample
 from collections import OrderedDict
 import matplotlib.pyplot as plt
 from gru_score import GRUScore
@@ -144,7 +144,7 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
 def test(type=None):
     if not type:
         type = random.choice(SUPPORTED_SAMPLE_TYPES)
-    sample, _ = generate_sample(type)
+    sample, _ = get_sample(type)
     result = calc_features(sample)
     # print(result)
     return type, result

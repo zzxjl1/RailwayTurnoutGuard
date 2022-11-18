@@ -9,7 +9,7 @@ from torch.utils.data import DataLoader, TensorDataset
 import numpy as np
 import torch
 import torch.nn as nn
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, get_sample
 
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
@@ -101,7 +101,7 @@ class Generator(nn.Module):
     def generate(self, sample_type):
         z = torch.randn(1, NOISE_DIM).to(DEVICE)
         label = torch.tensor(SUPPORTED_SAMPLE_TYPES.index(
-            sample_type), dtype=torch.long,device=DEVICE)
+            sample_type), dtype=torch.long, device=DEVICE)
         result = self.forward(z, label)
         result = result.cpu().detach().numpy()
         return result[0]
@@ -286,7 +286,7 @@ def train(data_loader):
             d_loss = d_loss_real + d_loss_fake
 
             d_loss_real.backward()
-            if epoch %2 == 0:
+            if epoch % 2 == 0:
                 d_loss_fake.backward()
             # update D
             discriminator_optimizer.step()
@@ -316,7 +316,7 @@ def train(data_loader):
         # end one epoch
 
         print("epoch:{}, d_loss_real: {:.4f},d_loss_fake: {:.4f}, g_loss: {:.4f}, d_acc: {:.4f}"
-              .format(epoch, d_loss_real.item(),d_loss_fake.item(), g_loss_fake.item(), d_acc))
+              .format(epoch, d_loss_real.item(), d_loss_fake.item(), g_loss_fake.item(), d_acc))
 
 
 def parse(time_series):
@@ -331,12 +331,13 @@ def parse(time_series):
 
 def get_sample(type):
     """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, _ = generate_sample(type=type)
+    temp, _ = get_sample(type=type)
     time_series = []
     for type in SERIES_TO_ENCODE:
         result = parse(temp[type][1])
         time_series.append(list(result))  # concat操作
     return time_series
+
 
 def generate_dataset(use_onehot):
     """生成数据集"""

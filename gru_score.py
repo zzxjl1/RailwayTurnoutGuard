@@ -71,6 +71,7 @@ TIME_SERIES_DURATION = 20  # 20s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
 SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power曲线
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
+SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
 
 EPOCHS = 200  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
@@ -79,12 +80,14 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available()
                       and not FORCE_CPU else 'cpu')
 CHANNELS = len(SERIES_TO_ENCODE)  # 通道数
-TRAIN_ONLY_WITH_NORMAL = False  # 只用正常数据训练（！经测试，使用故障样本训练会无法收敛！）
+TRAIN_ONLY_WITH_NORMAL = True  # 只用正常数据训练（！使用故障样本训练会无法收敛！）
 
 
 def get_dataloader():
-    x, seg_indexs = generate_dataset(DATASET_LENGTH, TIME_SERIES_LENGTH, type="normal" if TRAIN_ONLY_WITH_NORMAL else None,
-                                     pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES, series_to_encode=SERIES_TO_ENCODE)
+    x, seg_indexs, _ = generate_dataset(DATASET_LENGTH, TIME_SERIES_LENGTH,
+                                        sample_type="normal" if TRAIN_ONLY_WITH_NORMAL else None,
+                                        pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                                        series_to_encode=SERIES_TO_ENCODE)
     dataset_length, channels, seq_len = x.shape
     x = x.transpose(0, 2, 1)
     x = torch.from_numpy(x).float()
@@ -103,8 +106,10 @@ def get_dataloader():
     return dataloader
 
 
-model = GRUScore(input_size=CHANNELS, hidden_size=TIME_SERIES_LENGTH //
-                 POOLING_FACTOR_PER_TIME_SERIES, output_size=1, device="cpu")
+model = GRUScore(input_size=CHANNELS,
+                 hidden_size=SEQ_LENGTH,
+                 output_size=1,
+                 device=DEVICE)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
@@ -131,7 +136,7 @@ def predict(t) -> np.ndarray:
     batch_size, channels, seq_len = t.shape
     assert batch_size == 1
     assert channels == CHANNELS
-    assert seq_len == TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES
+    assert seq_len == SEQ_LENGTH
     assert os.path.exists(FILE_PATH), "please train() first"
 
     model = torch.load(FILE_PATH)
@@ -143,11 +148,11 @@ def predict(t) -> np.ndarray:
 
 
 def test(type="normal"):
-    t, seg_indexs = generate_dataset(dataset_length=1,
-                                     time_series_length=TIME_SERIES_LENGTH,
-                                     type=type,
-                                     pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                                     series_to_encode=SERIES_TO_ENCODE)
+    t, seg_indexs, _ = generate_dataset(dataset_length=1,
+                                        time_series_length=TIME_SERIES_LENGTH,
+                                        sample_type=type,
+                                        pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                                        series_to_encode=SERIES_TO_ENCODE)
     out = predict(t)
     fig = plt.figure(dpi=150, figsize=(9, 2))
     ax1 = fig.subplots()
@@ -196,8 +201,7 @@ def model_input_parse(sample):
                              time_series_length=TIME_SERIES_LENGTH,
                              pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
                              series_to_encode=SERIES_TO_ENCODE)
-    result = result.reshape(1, CHANNELS, TIME_SERIES_LENGTH //
-                            POOLING_FACTOR_PER_TIME_SERIES)
+    result = result.reshape(1, CHANNELS, SEQ_LENGTH)
     return result
 
 

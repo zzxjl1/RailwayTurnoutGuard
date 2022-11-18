@@ -10,7 +10,7 @@ import numpy as np
 from einops import rearrange, repeat
 from einops.layers.torch import Rearrange, Reduce
 
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, get_sample
 
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
@@ -35,7 +35,7 @@ POOLING_FACTOR_PER_TIME_SERIES = 10  # 每个时间序列的池化因子,用于�
 
 
 class Generator(nn.Module):
-    def __init__(self, seq_len,channels, patch_size=40, embed_dim=10, depth=5,
+    def __init__(self, seq_len, channels, patch_size=40, embed_dim=10, depth=5,
                  forward_drop_rate=0.5, attn_drop_rate=0.5):
         super(Generator, self).__init__()
         self.channels = channels
@@ -71,7 +71,7 @@ class Generator(nn.Module):
         output = self.deconv(x.permute(0, 3, 1, 2))
         output = output.view(-1, self.channels, H, W)
         return output
-        
+
     def generate(self):
         z = torch.Tensor(np.random.normal(0, 1, (1, NOISE_DIM))).to(DEVICE)
         fake_timeseries = gen_net(z)
@@ -232,7 +232,7 @@ class PatchEmbedding_Linear(nn.Module):
 
 class Discriminator(nn.Sequential):
     def __init__(self,
-                 seq_length, 
+                 seq_length,
                  in_channels,
                  n_classes,
                  patch_size=15,
@@ -319,12 +319,12 @@ def train(train_loader):
             if global_steps % 1 == 0:
 
                 gen_z = torch.cuda.FloatTensor(np.random.normal(
-                        0, 1, (batch_size, NOISE_DIM)))
+                    0, 1, (batch_size, NOISE_DIM)))
                 gen_timeseries = gen_net(gen_z)
                 fake_validity = dis_net(gen_timeseries)
 
                 real_label = torch.full(
-                        (batch_size*N_CLASSES,), 1., dtype=torch.float, device=real_timeseries.get_device())
+                    (batch_size*N_CLASSES,), 1., dtype=torch.float, device=real_timeseries.get_device())
                 fake_validity = nn.Sigmoid()(fake_validity.view(-1))
                 g_loss = nn.BCELoss()(fake_validity, real_label)
                 g_loss.backward()
@@ -353,6 +353,7 @@ def draw(y, title=""):
     plt.title(title)
     plt.show()
 
+
 def parse(time_series):
     # 超长的截断，短的补0
     if len(time_series) > TIME_SERIES_LENGTH:
@@ -365,7 +366,7 @@ def parse(time_series):
 
 def get_sample(type):
     """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, _ = generate_sample(type=type)
+    temp, _ = get_sample(type=type)
     time_series = []
     for type in SERIES_TO_ENCODE:
         result = parse(temp[type][1])

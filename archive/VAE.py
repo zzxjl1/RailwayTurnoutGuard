@@ -8,7 +8,7 @@ from collections import OrderedDict
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, get_sample
 
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
@@ -195,7 +195,7 @@ def parse(time_series):
 
 def get_sample(type):
     """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, _ = generate_sample(type=type)
+    temp, _ = get_sample(type=type)
     time_series = []
     for type in SERIES_TO_ENCODE:
         result = parse(temp[type][1])

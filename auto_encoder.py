@@ -53,11 +53,11 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
 
 
 def get_dataloader(type):
-    temp, _ = generate_dataset(dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
-                               time_series_length=TIME_SERIES_LENGTH,
-                               type=type,
-                               pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                               series_to_encode=SERIES_TO_ENCODE)
+    temp, _, _ = generate_dataset(dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
+                                  time_series_length=TIME_SERIES_LENGTH,
+                                  sample_type=type,
+                                  pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                                  series_to_encode=SERIES_TO_ENCODE)
     DATASET = torch.tensor(temp, dtype=torch.float,
                            requires_grad=True).to(DEVICE)  # 转换为tensor
     # 通道合并
@@ -98,8 +98,8 @@ def train(type="normal"):
             losses, nums = zip(
                 *[loss_batch(model, x, is_train=False) for (x,) in test_dl])
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
-        print('Epoch [{}/{}], Validation_Loss: {}'
-              .format(epoch + 1, EPOCHS, val_loss))
+        print('Epoch [{}/{}], Validation_Loss: {}, Type: {}'
+              .format(epoch + 1, EPOCHS, val_loss, type))
 
     torch.save(model, f"{FILE_PATH}{type}.pth")  # 保存模型
 
@@ -175,11 +175,11 @@ def draw(y_before, y_after, title=""):
 
 def test(type="normal", show_plt=False):
     """生成一个样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
-    y, _ = generate_dataset(dataset_length=1,
-                            time_series_length=TIME_SERIES_LENGTH,
-                            type=type,
-                            pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                            series_to_encode=SERIES_TO_ENCODE)
+    y, _, _ = generate_dataset(dataset_length=1,
+                               time_series_length=TIME_SERIES_LENGTH,
+                               sample_type=type,
+                               pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                               series_to_encode=SERIES_TO_ENCODE)
     y_before = torch.tensor(y, dtype=torch.float).to(DEVICE)
     y_before = y_before.view(TOTAL_LENGTH)
     results, losses = predict(y_before)
@@ -212,7 +212,7 @@ if __name__ == "__main__":
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))
-    test_cycles = 1
+    test_cycles = 5
     for i in range(test_cycles):
         matrix += np.array(get_result_matrix(test_cycles == 1))
     matrix = matrix / test_cycles

@@ -4,7 +4,7 @@ import numpy as np
 import torch
 from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, get_sample
 
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
@@ -152,8 +152,8 @@ class Discriminator(nn.Module):
         self.linear_2.weight.data.fill_(0.01)
 
     def forward(self, input, channel_last=True):
-        
-        #print(input.shape)
+
+        # print(input.shape)
         # 降采样
         input = input[:, ::POOLING_FACTOR_PER_TIME_SERIES, :]
 
@@ -177,6 +177,7 @@ class Discriminator(nn.Module):
         r = torch.tanh(j0)
         return r
 
+
 class Generator(nn.Module):
     def __init__(
         self,
@@ -194,7 +195,8 @@ class Generator(nn.Module):
         self.out_dim = out_dim
 
         self.lstm = nn.LSTM(in_dim, hidden_dim, n_layers, batch_first=True)
-        self.linear_1 = nn.Sequential(nn.Linear(hidden_dim, out_dim), nn.Tanh())
+        self.linear_1 = nn.Sequential(
+            nn.Linear(hidden_dim, out_dim), nn.Tanh())
         num_channels = [n_channel] * n_layers
 
         self.causalBlock = CausalDialationBlock(
@@ -206,23 +208,23 @@ class Generator(nn.Module):
     def forward(self, input):
         batch_size, seq_len = input.size(0), input.size(1)
 
-        h_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim).to(DEVICE)
-        c_0 = torch.zeros(self.n_layers, batch_size, self.hidden_dim).to(DEVICE)
+        h_0 = torch.zeros(self.n_layers, batch_size,
+                          self.hidden_dim).to(DEVICE)
+        c_0 = torch.zeros(self.n_layers, batch_size,
+                          self.hidden_dim).to(DEVICE)
 
         recurrent_features, _ = self.lstm(input, (h_0, c_0))
-        
 
         y1 = self.causalBlock(
             recurrent_features.transpose(1, 2)
         )
-        
-        j = self.linear_2(y1.transpose(1, 2))
-        
-        r = torch.relu(j)
-        r = r.reshape(batch_size,seq_len,1)
-        
-        return r
 
+        j = self.linear_2(y1.transpose(1, 2))
+
+        r = torch.relu(j)
+        r = r.reshape(batch_size, seq_len, 1)
+
+        return r
 
 
 netD = Discriminator(
@@ -255,12 +257,12 @@ optimizerD = torch.optim.Adam(netD.parameters(), lr=LEARNING_RATE)
 optimizerG = torch.optim.Adam(netG.parameters(), lr=LEARNING_RATE)
 torch.manual_seed(0)
 
+
 def train(dataloader):
     for epoch in range(EPOCHS):
         for i, data in enumerate(dataloader):
             data = data[0].to(DEVICE)
-            batch_size, seq_len = data.size(0),data.size(1)
-
+            batch_size, seq_len = data.size(0), data.size(1)
 
             netD.zero_grad()
             real = data
@@ -276,7 +278,6 @@ def train(dataloader):
 
             noise = torch.randn(batch_size, seq_len, NOISE_DIM, device=DEVICE)
             fake = netG(noise)
-            
 
             label.fill_(fake_label)
             output = netD(fake.detach())
@@ -287,7 +288,6 @@ def train(dataloader):
             errD = errD_real + errD_fake
             optimizerD.step()
 
-
             netG.zero_grad()
             label.fill_(real_label)
             output = netD(fake)
@@ -297,12 +297,13 @@ def train(dataloader):
             D_G_z2 = output.mean().item()
 
             optimizerG.step()
-            
+
             print(
                 f"[{epoch}/{EPOCHS}][{i}/{len(dataloader)}] Loss_D:{errD.item():.4f} Loss_D_REAL:{errD_real.item():.4f} Loss_D_FAKE:{errD_fake.item():.4f} Loss_G:{errG.item():.4f} D(x): {D_x:.4f} D(G(z)): {D_G_z1:.4f} / {D_G_z2:.4f}"
             )
-            #if epoch%5==0 and i==0:
+            # if epoch%5==0 and i==0:
             #    test_generate()
+
 
 def test_generate():
     t = generate()
@@ -321,7 +322,7 @@ def parse(time_series):
 
 def get_sample(type):
     """获取拼接后的时间序列，比如Phase A, B, C连在一起，这样做是为了输入模型中"""
-    temp, _ = generate_sample(type=type)
+    temp, _ = get_sample(type=type)
     time_series = []
     for type in SERIES_TO_ENCODE:
         result = parse(temp[type][1])
@@ -335,7 +336,7 @@ def generate_dataset(type):
     x = []
     for _ in range(DATASET_LENGTH):
         time_series = get_sample(type)
-        #draw(time_series[::POOLING_FACTOR_PER_TIME_SERIES])
+        # draw(time_series[::POOLING_FACTOR_PER_TIME_SERIES])
         x.append(time_series)
     return np.array(x)
 
@@ -350,12 +351,14 @@ def get_dataloader(type="normal"):
     ds = TensorDataset(t)
     return DataLoader(ds, batch_size=BATCH_SIZE, shuffle=True)
 
+
 def generate():
-    target_length=TIME_SERIES_LENGTH*3//POOLING_FACTOR_PER_TIME_SERIES
+    target_length = TIME_SERIES_LENGTH*3//POOLING_FACTOR_PER_TIME_SERIES
     noise = torch.randn(1, target_length, NOISE_DIM, device=DEVICE)
     fake = netG(noise)
     result = fake.reshape(target_length)
     return result.cpu().detach().numpy()
+
 
 def draw(y, title=""):
     plt.plot(y)
@@ -366,11 +369,11 @@ def draw(y, title=""):
     plt.axvline(x=TIME_SERIES_LENGTH, color='r', linestyle='--')
     plt.title(title)
     plt.show()
-    
+
+
 if __name__ == "__main__":
     dataloader = get_dataloader()
     train(dataloader)
 
     t = generate()
     draw(t)
-

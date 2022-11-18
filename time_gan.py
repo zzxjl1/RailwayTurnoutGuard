@@ -150,11 +150,11 @@ class TimeSeriesDataLoader:
         assert sample_type in SUPPORTED_SAMPLE_TYPES
         self.data_dir = os.path.join(os.path.dirname(__file__), "../data")
 
-        data, _ = generate_dataset(dataset_length=DATASET_LENGTH,
-                                   time_series_length=TIME_SERIES_LENGTH,
-                                   type=sample_type,
-                                   pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                                   series_to_encode=SERIES_TO_ENCODE)
+        data, _, _ = generate_dataset(dataset_length=DATASET_LENGTH,
+                                      time_series_length=TIME_SERIES_LENGTH,
+                                      sample_type=sample_type,
+                                      pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                                      series_to_encode=SERIES_TO_ENCODE)
         data = data.transpose(0, 2, 1)
 
         self.data, self.min_val, self.max_val = self.MinMaxScaler(

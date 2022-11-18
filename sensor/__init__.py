@@ -1,5 +1,6 @@
 from . import utils
 from . import simulate
+from . import dataset
 from .config import SUPPORTED_SAMPLE_TYPES, SAMPLE_RATE, USE_SIMULATED_DATA
 
 
@@ -9,7 +10,4 @@ random_float = utils.random_float
 show_sample = utils.show_sample
 add_noise = simulate.add_noise
 interpolate = simulate.interpolate
-if USE_SIMULATED_DATA:
-    generate_sample = simulate.generate_sample
-else:
-    pass
+get_sample = dataset.get_sample

@@ -4,7 +4,7 @@
 from gru_score import get_score_by_time, time_to_index, GRUScore, model_input_parse
 from gru_score import predict as gru_predict_score
 from matplotlib import patches, pyplot as plt
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, generate_sample
+from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, get_sample
 from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
@@ -190,7 +190,7 @@ if __name__ == "__main__":
     # calc_segmentation_points(sample)
 
     for type in SUPPORTED_SAMPLE_TYPES:
-        sample, segmentations = generate_sample(type)
+        sample, segmentations = get_sample(type)
         gru_score = gru_predict_score(model_input_parse(sample))
         print(sample.keys())
         name = "A"

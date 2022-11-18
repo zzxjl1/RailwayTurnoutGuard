@@ -1,18 +1,19 @@
 import random
 import numpy as np
 
-
 try:
-    from sensor.config import SUPPORTED_SAMPLE_TYPES
+    from sensor.config import SUPPORTED_SAMPLE_TYPES, USE_SIMULATED_DATA
     from sensor.simulate import generate_sample
     from sensor.utils import find_nearest
 except:
-    from config import SUPPORTED_SAMPLE_TYPES
+    from config import SUPPORTED_SAMPLE_TYPES, USE_SIMULATED_DATA
     from simulate import generate_sample
     from utils import find_nearest
 
 
-def parse_time_series(time_series, time_series_length, pooling_factor_per_time_series):
+def parse_time_series(time_series,
+                      time_series_length,
+                      pooling_factor_per_time_series):
     # 超长的截断，短的补0, 之后再降采样
     if len(time_series) > time_series_length:
         result = np.array(
@@ -24,7 +25,11 @@ def parse_time_series(time_series, time_series_length, pooling_factor_per_time_s
     return result
 
 
-def parse_sample(sample, segmentations, time_series_length, pooling_factor_per_time_series, series_to_encode):
+def parse_sample(sample,
+                 segmentations,
+                 time_series_length,
+                 pooling_factor_per_time_series,
+                 series_to_encode):
     time_series = []
     seg_index = []
     for name in series_to_encode:
@@ -45,27 +50,40 @@ def parse_sample(sample, segmentations, time_series_length, pooling_factor_per_t
     return result, seg_index
 
 
-def generate_dataset(dataset_length, time_series_length, type=None, pooling_factor_per_time_series=1, series_to_encode=["A", "B", "C"]):
-    """生成数据集"""
-    x, seg_indexs = [], []
-    for _ in range(dataset_length):
-        if type is None:
-            type = random.choice(SUPPORTED_SAMPLE_TYPES)
-        sample, segmentations = generate_sample(type)
-        time_series, seg_index = parse_sample(sample,
-                                              segmentations,
-                                              time_series_length,
-                                              pooling_factor_per_time_series,
-                                              series_to_encode)
+def get_sample(type):
+    if USE_SIMULATED_DATA:
+        return generate_sample(type)
+    else:
+        raise NotImplementedError
 
-        x.append(time_series)
+
+def generate_dataset(dataset_length,
+                     time_series_length,
+                     sample_type=None,
+                     pooling_factor_per_time_series=1,
+                     series_to_encode=["A", "B", "C"]):
+    """生成数据集"""
+    x, seg_indexs, types = [], [], []
+    for _ in range(dataset_length):
+
+        type = sample_type if sample_type is not None else random.choice(
+            SUPPORTED_SAMPLE_TYPES)
+        sample, segmentations = get_sample(type)
+        array_sample, seg_index = parse_sample(sample,
+                                               segmentations,
+                                               time_series_length,
+                                               pooling_factor_per_time_series,
+                                               series_to_encode)
+
+        x.append(array_sample)
         seg_indexs.append(seg_index)
-    return np.array(x), seg_indexs
+        types.append(type)
+    return np.array(x), seg_indexs, types
 
 
 if __name__ == "__main__":
     BATCH_SIZE = 10
     TIME_SERIES_LENGTH = 100
-    t, seg_index = generate_dataset(BATCH_SIZE, TIME_SERIES_LENGTH, type=None,
-                                    pooling_factor_per_time_series=2, series_to_encode=["A", "B", "C"])
-    print(t.shape, seg_index)
+    t, seg_indexs, types = generate_dataset(BATCH_SIZE, TIME_SERIES_LENGTH, sample_type=None,
+                                            pooling_factor_per_time_series=2, series_to_encode=["A", "B", "C"])
+    print(t.shape, seg_indexs, types)

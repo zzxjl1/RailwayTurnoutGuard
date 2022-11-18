@@ -11,3 +11,5 @@ show_sample = utils.show_sample
 add_noise = simulate.add_noise
 interpolate = simulate.interpolate
 get_sample = dataset.get_sample
+generate_dataset = dataset.generate_dataset
+parse_sample = dataset.parse_sample

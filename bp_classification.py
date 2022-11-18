@@ -19,6 +19,7 @@ from extract_features import IGNORE_LIST, calc_features
 from alive_progress import alive_bar
 from sensor import SUPPORTED_SAMPLE_TYPES, get_sample
 from gru_score import GRUScore
+from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILENAME = "./models/dnn_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
@@ -33,6 +34,7 @@ INPUT_VECTOR_SIZE = 1 + 10 * 3 * 4 - len(IGNORE_LIST)  # 输入向量的大小
 TRANING_SET_LENGTH = 800  # 训练集长度
 TESTING_SET_LENGTH = 200  # 测试集长度
 DATASET_LENGTH = TRANING_SET_LENGTH + TESTING_SET_LENGTH
+N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
 
 
 def weight_init(m):
@@ -95,7 +97,7 @@ BP_Net = nn.Sequential(
 
 
 model = BP_Net(input_vector_size=INPUT_VECTOR_SIZE,
-               output_vector_size=12).to(DEVICE)  # 使用BP模型
+               output_vector_size=N_CLASSES).to(DEVICE)  # 使用BP模型
 print(model)
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # adam优化器
@@ -198,18 +200,6 @@ def train():
 
     torch.save(model, FILENAME)  # 保存模型
     # torch.onnx.export(model, torch.randn(1, INPUT_VECTOR_SIZE),"model.onnx")  # 保存onnx格式模型
-
-
-def parse_predict_result(result):
-    """解析预测结果"""
-    result_pretty = [round(i, 2) for i in result.tolist()[0]]
-    result_pretty = dict(zip(SUPPORTED_SAMPLE_TYPES, result_pretty))  # 让输出更美观
-    return result_pretty
-
-
-def get_label_from_result_pretty(result_pretty):
-    """从解析后的预测结果中获取标签"""
-    return max(result_pretty, key=result_pretty.get)
 
 
 def predict(sample):

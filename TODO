@@ -1,6 +1,7 @@
 segmentation 新旧方法融合  ✅
 思考分3段够吗，要不要优化   ✅ （就是因为分的不细，RNN_classification才可以发挥作用，如果dnn做完了rnn就变得可有可无，论文里要写）
-特征工程重新做  ☑️
+特征工程重新做  ✅
+RNN_classification
 集成学习做融合  ☑️
 
 gan的判别器改成AutoEncoder  ☑️

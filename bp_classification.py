@@ -15,9 +15,10 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
-from extract_features import calc_features
-from alive_progress import alive_bar, alive_it
+from extract_features import IGNORE_LIST, calc_features
+from alive_progress import alive_bar
 from sensor import SUPPORTED_SAMPLE_TYPES, get_sample
+from gru_score import GRUScore
 
 FILENAME = "./models/dnn_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
@@ -28,7 +29,10 @@ print('Using device:', DEVICE)
 EPOCHS = 100  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 
-INPUT_VECTOR_SIZE = 1 + 10 * 3 * 4
+INPUT_VECTOR_SIZE = 1 + 10 * 3 * 4 - len(IGNORE_LIST)  # 输入向量的大小
+TRANING_SET_LENGTH = 800  # 训练集长度
+TESTING_SET_LENGTH = 200  # 测试集长度
+DATASET_LENGTH = TRANING_SET_LENGTH + TESTING_SET_LENGTH
 
 
 def weight_init(m):
@@ -90,99 +94,8 @@ BP_Net = nn.Sequential(
 """
 
 
-class FuzzyLayer(nn.Module):
-
-    def __init__(self, input_dim, output_dim):
-        super(FuzzyLayer, self).__init__()
-
-        self.input_dim = input_dim
-        self.output_dim = output_dim
-
-        fuzzy_degree_weights = torch.Tensor(self.input_dim, self.output_dim)
-        self.fuzzy_degree = nn.Parameter(fuzzy_degree_weights)
-        sigma_weights = torch.Tensor(self.input_dim, self.output_dim)
-        self.sigma = nn.Parameter(sigma_weights)
-
-        # initialize fuzzy degree and sigma parameters
-        nn.init.xavier_uniform_(self.fuzzy_degree)  # fuzzy degree init
-        nn.init.ones_(self.sigma)  # sigma init
-
-    def forward(self, input):
-        fuzzy_out = []
-        for variable in input:
-            fuzzy_out_i = torch.exp(-torch.sum(torch.sqrt(
-                (variable - self.fuzzy_degree) / (self.sigma ** 2))))
-            if torch.isnan(fuzzy_out_i):
-                fuzzy_out.append(variable)
-            else:
-                fuzzy_out.append(fuzzy_out_i)
-        return torch.tensor(fuzzy_out, dtype=torch.float)
-
-
-class FusedFuzzyDeepNet(nn.Module):
-    def __init__(self, input_vector_size, fuzz_vector_size, num_class, fuzzy_layer_input_dim=1,
-                 fuzzy_layer_output_dim=1,
-                 dropout_rate=0.5, device=DEVICE):
-
-        super(FusedFuzzyDeepNet, self).__init__()
-        self.device = device
-        self.input_vector_size = input_vector_size
-        self.fuzz_vector_size = fuzz_vector_size
-        self.num_class = num_class
-        self.fuzzy_layer_input_dim = fuzzy_layer_input_dim
-        self.fuzzy_layer_output_dim = fuzzy_layer_output_dim
-
-        self.dropout_rate = dropout_rate
-
-        self.bn = nn.BatchNorm1d(self.input_vector_size)
-        self.fuzz_init_linear_layer = nn.Linear(
-            self.input_vector_size, self.fuzz_vector_size)
-
-        fuzzy_rule_layers = []
-        for i in range(self.fuzz_vector_size):
-            fuzzy_rule_layers.append(FuzzyLayer(
-                fuzzy_layer_input_dim, fuzzy_layer_output_dim))
-        self.fuzzy_rule_layers = nn.ModuleList(fuzzy_rule_layers)
-
-        self.dl_linear_1 = nn.Linear(
-            self.input_vector_size, self.input_vector_size)
-        self.dl_linear_2 = nn.Linear(
-            self.input_vector_size, self.input_vector_size)
-        self.dropout_layer = nn.Dropout(self.dropout_rate)
-        self.fusion_layer = nn.Linear(
-            self.input_vector_size * 2, self.input_vector_size)
-        self.output_layer = nn.Linear(self.input_vector_size, self.num_class)
-        self.softmax = nn.Softmax(dim=1)
-
-    def forward(self, input):
-        input = self.bn(input)
-        fuzz_input = self.fuzz_init_linear_layer(input)
-        fuzz_output = torch.zeros(
-            input.size(), dtype=torch.float, device=self.device)
-        for col_idx in range(fuzz_input.size()[1]):
-            col_vector = fuzz_input[:, col_idx:col_idx + 1]
-            fuzz_col_vector = self.fuzzy_rule_layers[col_idx](
-                col_vector).unsqueeze(0).view(-1, 1)
-            fuzz_output[:, col_idx:col_idx + 1] = fuzz_col_vector
-
-        dl_layer_1_output = torch.sigmoid(self.dl_linear_1(input))
-        dl_layer_2_output = torch.sigmoid(self.dl_linear_2(dl_layer_1_output))
-        dl_layer_2_output = self.dropout_layer(dl_layer_2_output)
-
-        cat_fuzz_dl_output = torch.cat([fuzz_output, dl_layer_2_output], dim=1)
-
-        fused_output = torch.sigmoid(self.fusion_layer(cat_fuzz_dl_output))
-        fused_output = torch.relu(fused_output)
-
-        output = self.softmax(self.output_layer(fused_output))
-
-        return output
-
-
-model = FusedFuzzyDeepNet(input_vector_size=INPUT_VECTOR_SIZE,
-                          fuzz_vector_size=30, num_class=12).to(DEVICE)  # 使用FNN模型
-# model = BP_Net(input_vector_size=INPUT_VECTOR_SIZE,
-#               output_vector_size=12).to(DEVICE)  # 使用BP模型
+model = BP_Net(input_vector_size=INPUT_VECTOR_SIZE,
+               output_vector_size=12).to(DEVICE)  # 使用BP模型
 print(model)
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # adam优化器
@@ -233,18 +146,8 @@ def fit(train_dl, valid_dl):
         print('当前step:' + str(step), '验证集损失：' + str(val_loss))
 
 
-def generate_data(num):
-    """生成数据集（带缓存）"""
-    filename = 'extracted_features_dataset.pkl'
-    if os.path.exists(filename):  # 如果缓存存在
-        with open(filename, 'rb') as f:
-            x, y = pickle.load(f)  # 读取
-            if len(x) >= num:  # 如果数量符合要求
-                # 返回前num个
-                return x[:num], y[:num]
-            else:  # 否则重新生成
-                print('dataset cache not match, regenerate')
-                os.remove(filename)
+def generate_dataset(num):
+    """生成数据集"""
     x = []  # 特征值
     y = []  # 目标值
     with alive_bar(num, title="数据集生成中") as bar:
@@ -263,8 +166,6 @@ def generate_data(num):
                 y.append([0] * index + [1] + [0] *
                          (len(SUPPORTED_SAMPLE_TYPES) - index - 1))
                 bar()  # 进度条+1
-    with open(filename, 'wb') as f:
-        pickle.dump((x, y), f)  # 保存到磁盘
     return x, y
 
 
@@ -281,9 +182,7 @@ def predict_raw_input(x):
 
 def train():
     """训练模型"""
-    DATASET_LENGTH = 1000  # 数据集长度
-    TRANING_SET_LENGTH = 800  # 训练集长度
-    DATASET = generate_data(DATASET_LENGTH)  # 生成数据集
+    DATASET = generate_dataset(DATASET_LENGTH)  # 生成数据集
 
     x, y = map(lambda a: torch.tensor(np.array(a), dtype=torch.float,
                requires_grad=True), DATASET)  # 转换为tensor
@@ -337,7 +236,7 @@ if __name__ == '__main__':
 
     train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
-    test_cycles = 100  # 测试次数
+    test_cycles = 500  # 测试次数
     test_results = []
     for _ in range(test_cycles):
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测

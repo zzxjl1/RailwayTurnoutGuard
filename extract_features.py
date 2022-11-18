@@ -3,11 +3,15 @@
 """
 
 import random
-from segmentation import calc_segmentation_points, calc_segmentation_points_single_series
+import numpy as np
+from segmentation import calc_segmentation_points
 from sensor import SUPPORTED_SAMPLE_TYPES, find_nearest, get_sample
 from collections import OrderedDict
 import matplotlib.pyplot as plt
 from gru_score import GRUScore
+
+IGNORE_LIST = ["A_stage1_min", "B_stage1_min", "C_stage1_min", "power_stage1_min",
+               "A_stage3_min", "B_stage3_min", "C_stage3_min", "power_stage3_min"]
 
 
 def calc_features_per_stage(x, y, series_name, stage_name):
@@ -36,11 +40,12 @@ def calc_features_per_stage(x, y, series_name, stage_name):
                 max(y)-min(y))/(sum(y)/len(y))  # Peak factor
 
         else:
-            result[f"{series_name}_{stage_name}_impluse_factor"] = 0
-            result[f"{series_name}_{stage_name}_peak_factor"] = 0
+            result[f"{series_name}_{stage_name}_impluse_factor"] = max(y)
+            result[f"{series_name}_{stage_name}_peak_factor"] = max(y)-min(y)
+
         # nan值置0
         for k, v in result.items():
-            if v != v:
+            if np.isnan(v):
                 result[k] = 0
     else:
         result[f"{series_name}_{stage_name}_time_span"] = 0  # 同上
@@ -65,16 +70,20 @@ def calc_features(sample):
     （stage时间跨度、最大值、最小值、平均值、中位数、Standard deviation、Peak factor、Fluctuation factor）*4个曲线*3个stage
     """
     segmentation_points = calc_segmentation_points(sample)
-    result = OrderedDict()
+    features = OrderedDict()
     for name, series in sample.items():  # 遍历4个曲线
         x, y = series
         total_time_elipsed = x[-1]-x[0]  # 总用时
         t = calc_features_single_series(x, y, segmentation_points, name)
-        result.update(t)  # 合并
-    result["total_time_elipsed"] = total_time_elipsed
+        features.update(t)  # 合并
+    features["total_time_elipsed"] = total_time_elipsed
 
-    assert len(result) == 1+10*3*4  # 断言确保特征数
-    return result
+    assert len(features) == 1+10*3*4  # 断言确保特征数
+
+    for i in IGNORE_LIST:
+        features.pop(i)
+
+    return features
 
 
 def calc_features_single_series(x, y, segmentation_points, series_name):
@@ -138,6 +147,7 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
         features.update(stage3)
 
     assert len(features) == 10*3
+
     return features
 
 
@@ -151,10 +161,9 @@ def test(type=None):
 
 
 if __name__ == "__main__":
-    print(test())
 
     results = {}
-    for _ in range(100):
+    for _ in range(30):
         type, features = test()
         for k, v in features.items():
             if k not in results:
@@ -172,11 +181,15 @@ if __name__ == "__main__":
     print(results)
     count = 1
     for k, v in results.items():
-        height, width = 13, 10
+        height, width = 9, 10
+        #height, width = 13, 10
         #height, width = 10, 5
         if count > height*width:
             break
         plt.subplot(height, width, count)
+        # 不显示刻度
+        plt.xticks(())
+        plt.yticks(())
         count += 1
         plt.title(k, fontsize=10)
         for type, data in v.items():

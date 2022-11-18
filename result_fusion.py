@@ -1,0 +1,106 @@
+import torch
+from torch import nn
+
+FILENAME = "./models/result_fusion.pth"
+BATCH_SIZE = 64  # 每批处理的数据
+FORCE_CPU = True  # 强制使用CPU
+DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
+                      else 'cpu')
+print('Using device:', DEVICE)
+EPOCHS = 100  # 训练数据集的轮次
+LEARNING_RATE = 1e-3  # 学习率
+
+INPUT_VECTOR_SIZE = 0
+
+
+class FuzzyLayer(nn.Module):
+
+    def __init__(self, input_dim, output_dim):
+        super(FuzzyLayer, self).__init__()
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        fuzzy_degree_weights = torch.Tensor(self.input_dim, self.output_dim)
+        self.fuzzy_degree = nn.Parameter(fuzzy_degree_weights)
+        sigma_weights = torch.Tensor(self.input_dim, self.output_dim)
+        self.sigma = nn.Parameter(sigma_weights)
+
+        # initialize fuzzy degree and sigma parameters
+        nn.init.xavier_uniform_(self.fuzzy_degree)  # fuzzy degree init
+        nn.init.ones_(self.sigma)  # sigma init
+
+    def forward(self, input):
+        fuzzy_out = []
+        for variable in input:
+            fuzzy_out_i = torch.exp(-torch.sum(torch.sqrt(
+                (variable - self.fuzzy_degree) / (self.sigma ** 2))))
+            if torch.isnan(fuzzy_out_i):
+                fuzzy_out.append(variable)
+            else:
+                fuzzy_out.append(fuzzy_out_i)
+        return torch.tensor(fuzzy_out, dtype=torch.float)
+
+
+class FusedFuzzyDeepNet(nn.Module):
+    def __init__(self, input_vector_size, fuzz_vector_size, num_class, fuzzy_layer_input_dim=1,
+                 fuzzy_layer_output_dim=1,
+                 dropout_rate=0.5, device=DEVICE):
+
+        super(FusedFuzzyDeepNet, self).__init__()
+        self.device = device
+        self.input_vector_size = input_vector_size
+        self.fuzz_vector_size = fuzz_vector_size
+        self.num_class = num_class
+        self.fuzzy_layer_input_dim = fuzzy_layer_input_dim
+        self.fuzzy_layer_output_dim = fuzzy_layer_output_dim
+
+        self.dropout_rate = dropout_rate
+
+        self.bn = nn.BatchNorm1d(self.input_vector_size)
+        self.fuzz_init_linear_layer = nn.Linear(
+            self.input_vector_size, self.fuzz_vector_size)
+
+        fuzzy_rule_layers = []
+        for i in range(self.fuzz_vector_size):
+            fuzzy_rule_layers.append(FuzzyLayer(
+                fuzzy_layer_input_dim, fuzzy_layer_output_dim))
+        self.fuzzy_rule_layers = nn.ModuleList(fuzzy_rule_layers)
+
+        self.dl_linear_1 = nn.Linear(
+            self.input_vector_size, self.input_vector_size)
+        self.dl_linear_2 = nn.Linear(
+            self.input_vector_size, self.input_vector_size)
+        self.dropout_layer = nn.Dropout(self.dropout_rate)
+        self.fusion_layer = nn.Linear(
+            self.input_vector_size * 2, self.input_vector_size)
+        self.output_layer = nn.Linear(self.input_vector_size, self.num_class)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, input):
+        input = self.bn(input)
+        fuzz_input = self.fuzz_init_linear_layer(input)
+        fuzz_output = torch.zeros(
+            input.size(), dtype=torch.float, device=self.device)
+        for col_idx in range(fuzz_input.size()[1]):
+            col_vector = fuzz_input[:, col_idx:col_idx + 1]
+            fuzz_col_vector = self.fuzzy_rule_layers[col_idx](
+                col_vector).unsqueeze(0).view(-1, 1)
+            fuzz_output[:, col_idx:col_idx + 1] = fuzz_col_vector
+
+        dl_layer_1_output = torch.sigmoid(self.dl_linear_1(input))
+        dl_layer_2_output = torch.sigmoid(self.dl_linear_2(dl_layer_1_output))
+        dl_layer_2_output = self.dropout_layer(dl_layer_2_output)
+
+        cat_fuzz_dl_output = torch.cat([fuzz_output, dl_layer_2_output], dim=1)
+
+        fused_output = torch.sigmoid(self.fusion_layer(cat_fuzz_dl_output))
+        fused_output = torch.relu(fused_output)
+
+        output = self.softmax(self.output_layer(fused_output))
+
+        return output
+
+
+model = FusedFuzzyDeepNet(input_vector_size=INPUT_VECTOR_SIZE,
+                          fuzz_vector_size=30, num_class=12).to(DEVICE)  # 使用FNN模型

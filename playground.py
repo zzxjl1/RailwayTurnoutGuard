@@ -1,5 +1,5 @@
 """pca lda demo"""
-from bp_classification import generate_data
+from bp_classification import generate_dataset
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
@@ -9,7 +9,7 @@ from paper import get_paper_sample
 from sensor import SUPPORTED_SAMPLE_TYPES
 
 SAMPLE_COUNT = 1000
-x, y = generate_data(SAMPLE_COUNT)
+x, y = generate_dataset(SAMPLE_COUNT)
 y = [i.index(1) for i in y]  # 将one-hot编码转换为索引
 
 #x = MinMaxScaler().fit_transform(x)
@@ -93,7 +93,7 @@ def lda_predict():
     global x, y
     clf = LinearDiscriminantAnalysis()
     clf.fit(x, y)
-    x, y = generate_data(20)
+    x, y = generate_dataset(20)
     print("-----lda_predict-----")
     print("prediction result:", clf.predict(x))
     print("real:", [i.index(1) for i in y])

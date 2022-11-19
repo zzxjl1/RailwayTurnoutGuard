@@ -270,7 +270,7 @@ def predict(sample, segmentations=None):
         batch_simulation=True
     )  # 转换为模型输入格式
     output = predict_raw_input(stage_1, stage_2, stage_3)
-    return output
+    return output.squeeze()
 
 
 def test(type=None):

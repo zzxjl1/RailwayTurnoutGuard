@@ -40,6 +40,7 @@ model = nn.Sequential(
     nn.Linear(TOTAL_LENGTH, round(TOTAL_LENGTH/5)),
     nn.Linear(round(TOTAL_LENGTH/5), TOTAL_LENGTH),
 ).to(DEVICE)  # 定义模型，很简单的AE,注意中间层的维度必须<<输入才有效
+print(model)
 
 
 def init_weights(m):

@@ -207,7 +207,7 @@ def predict(sample, segmentations=None):
     features = list(calc_features(sample, segmentations).values())  # 计算特征
     features = torch.tensor([features], dtype=torch.float)  # 转换为tensor
     result = predict_raw_input(features.to(DEVICE))  # 预测
-    return result
+    return result.squeeze()
 
 
 def test(type="normal"):
@@ -231,4 +231,4 @@ if __name__ == '__main__':
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测
         test_results.append(t)  # 记录结果
     print("accuracy:", test_results.count(
-        True) / test_cycles)  # 输出正确率（94.5%左右）
+        True) / test_cycles)  # 输出准确率（94.5%左右）

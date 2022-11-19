@@ -3,7 +3,7 @@ from sensor.config import SUPPORTED_SAMPLE_TYPES
 
 def parse_predict_result(result):
     """解析预测结果"""
-    result_pretty = [round(i, 2) for i in result.tolist()[0]]
+    result_pretty = [round(i, 2) for i in result.tolist()]
     result_pretty = dict(zip(SUPPORTED_SAMPLE_TYPES, result_pretty))  # 让输出更美观
     return result_pretty
 

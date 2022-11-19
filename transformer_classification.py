@@ -21,9 +21,9 @@ from gru_score import GRUScore
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILE_PATH = "./models/transformer_classification.pth"
-DATASET_LENGTH = 200  # 数据集总长度
-EPOCHS = 500  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
+DATASET_LENGTH = 500  # 数据集总长度
+EPOCHS = 10000  # 训练数据集的轮次
+LEARNING_RATE = 1e-4  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available()
@@ -37,8 +37,8 @@ POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于�
 SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
 
 STAGE_1_DURATION = 2
-STAGE_2_DURATION = 10
-STAGE_3_DURATION = 8
+STAGE_2_DURATION = 20
+STAGE_3_DURATION = 10
 
 
 def time_to_index(sec):
@@ -51,15 +51,45 @@ class TransformerLayer(nn.Module):
         self.input_vector_size = input_vector_size
         self.transformer = nn.TransformerEncoderLayer(input_vector_size,
                                                       nhead=1,
-                                                      dim_feedforward=256,
+                                                      dim_feedforward=512,
                                                       dropout=dropout_rate,
                                                       batch_first=True,
                                                       device=DEVICE)
-        self.fc = nn.Linear(input_vector_size, CHANNELS)
-        self.out = nn.Linear(CHANNELS, 1)
+        #self.fc = nn.Linear(input_vector_size, CHANNELS)
+        self.out = nn.Linear(input_vector_size, 1)
 
     def forward(self, x):
         x = self.transformer(x)
+        #x = self.fc(x)
+        x = self.out(x)
+        x = x.squeeze(2)
+        return x
+
+
+class RNNLayer(nn.Module):
+    def __init__(self, input_vector_size, hidden_size=128, num_layers=1, dropout_rate=0.5):
+        super(RNNLayer, self).__init__()
+        self.input_vector_size = input_vector_size
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.rnn = nn.GRU(input_vector_size,
+                          hidden_size,
+                          num_layers=num_layers,
+                          dropout=dropout_rate if num_layers > 1 else 0,
+                          batch_first=True)
+
+        self.fc = nn.Linear(hidden_size, hidden_size//2)
+        self.out = nn.Linear(hidden_size//2, 1)
+
+    def forward(self, x):
+        h0 = torch.zeros(self.num_layers,
+                         x.size(0),
+                         self.hidden_size).to(DEVICE)
+        c0 = torch.zeros(self.num_layers,
+                         x.size(0),
+                         self.hidden_size).to(DEVICE)
+        #x, _ = self.rnn(x, (h0, c0))
+        x, _ = self.rnn(x, h0)
         x = self.fc(x)
         x = self.out(x)
         x = x.squeeze(2)
@@ -77,19 +107,21 @@ class TransformerClassification(nn.Module):
 
         input_length = time_to_index(STAGE_1_DURATION) + time_to_index(
             STAGE_2_DURATION) + time_to_index(STAGE_3_DURATION)
-        self.fc2 = nn.Linear(input_length, output_vector_size*2)
+        self.fc1 = nn.Linear(input_length, output_vector_size*2)
         self.out = nn.Linear(output_vector_size*2, output_vector_size)
 
     def forward(self, stage_1, stage_2, stage_3):
+        stage_1 = stage_1.to(DEVICE)
+        stage_2 = stage_2.to(DEVICE)
+        stage_3 = stage_3.to(DEVICE)
+
         stage_1_result = self.transformer_stage_1(stage_1)
         stage_2_result = self.transformer_stage_2(stage_2)
         stage_3_result = self.transformer_stage_3(stage_3)
 
         x = torch.cat((stage_1_result, stage_2_result, stage_3_result), dim=1)
-        x = self.fc2(x)
-        x = F.relu(x)
+        x = self.fc1(x)
         x = self.out(x)
-        x = F.relu(x)
         x = F.softmax(x, dim=1)
         return x
 
@@ -212,9 +244,9 @@ def train():
     torch.save(model, FILE_PATH)  # 保存模型
 
 
-def predict(stage_1, stage_2, stage_3):
+def predict_raw_input(stage_1, stage_2, stage_3):
     assert os.path.exists(FILE_PATH), "model not found，please train first"
-    model = torch.load(FILE_PATH)  # 加载模型
+    model = torch.load(FILE_PATH).to(DEVICE)  # 加载模型
     # 转tensor
     stage_1 = torch.tensor(stage_1, dtype=torch.float32).to(DEVICE)
     stage_2 = torch.tensor(stage_2, dtype=torch.float32).to(DEVICE)
@@ -231,7 +263,7 @@ def test(type=None):
     sample, segmentations = get_sample(type)  # 生成样本
     stage_1, stage_2, stage_3 = model_input_parse(sample, segmentations)
     print(stage_1.shape, stage_2.shape, stage_3.shape)
-    output = predict(stage_1, stage_2, stage_3)
+    output = predict_raw_input(stage_1, stage_2, stage_3)
     print(output)
     result_pretty = parse_predict_result(output)  # 解析结果
     print(result_pretty)
@@ -242,7 +274,7 @@ def test(type=None):
 
 if __name__ == "__main__":
 
-    train()
+    # train()
     test_cycle = 200
     accuracy = sum([test() for _ in range(test_cycle)])/test_cycle
     print("accuracy: {}".format(accuracy))

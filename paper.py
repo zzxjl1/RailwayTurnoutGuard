@@ -2,6 +2,7 @@
 import pandas as pd
 from sensor import interpolate, generate_power_series, show_sample
 from bp_classification import get_label_from_result_pretty, predict, BP_Net, FusedFuzzyDeepNet, FuzzyLayer
+from tool_utils import parse_predict_result
 
 
 def get_paper_sample(type="normal", show_plt=False):
@@ -43,6 +44,7 @@ if __name__ == "__main__":
         sample = get_paper_sample(type=name, show_plt=True)
         # print(calc_features(sample))
         result = predict(sample)
-        print(result)
-        label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串
+        result_pretty = parse_predict_result(result)  # 解析结果
+        print(result_pretty)
+        label = get_label_from_result_pretty(result_pretty)  # 获取预测结果标签字符串
         print(label)

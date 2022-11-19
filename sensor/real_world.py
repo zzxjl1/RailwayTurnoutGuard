@@ -105,12 +105,12 @@ if __name__ == "__main__":
 
     from gru_score import GRUScore
     from segmentation import calc_segmentation_points
-    from auto_encoder import model_input_parse, predict, visualize_prediction_result
+    from auto_encoder import model_input_parse, predict_raw_input, visualize_prediction_result
 
     for sample in get_all_samples():
         show_sample(sample)  # 显示样本
         calc_segmentation_points(sample, show_plt=True)  # 计算分割点
 
         model_input = model_input_parse(sample)  # ae模型输入
-        results, losses = predict(model_input)  # ae预测
+        results, losses = predict_raw_input(model_input)  # ae预测
         visualize_prediction_result(model_input, results, losses)

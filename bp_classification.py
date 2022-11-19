@@ -175,7 +175,7 @@ def predict_raw_input(x):
     """预测,输入为原始数据，直接入模型"""
     assert os.path.exists(
         FILENAME), "model not found, please run train() first!"
-    model = torch.load(FILENAME)  # 加载模型
+    model = torch.load(FILENAME).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
     with torch.no_grad():
         output = model(x)
@@ -205,28 +205,27 @@ def train():
 def predict(sample):
     """预测"""
     features = list(calc_features(sample).values())  # 计算特征
-    features = torch.tensor([features], dtype=torch.float,
-                            requires_grad=True)  # 转换为tensor
+    features = torch.tensor([features], dtype=torch.float)  # 转换为tensor
     result = predict_raw_input(features.to(DEVICE))  # 预测
-    result_pretty = parse_predict_result(result)  # 解析结果
-    return result_pretty
+    return result
 
 
 def test(type="normal"):
     """生成type类型的样本，然后跑模型预测，最后返回是否正确"""
     sample, _ = get_sample(type)  # 生成样本
     result = predict(sample)  # 预测
-    print(result)
-    label = get_label_from_result_pretty(result)  # 获取预测结果标签字符串
-    print(label)
+    result_pretty = parse_predict_result(result)  # 解析结果
+    print("预测结果：", result_pretty)
+    label = get_label_from_result_pretty(result_pretty)  # 获取预测结果标签字符串
+    print(type, label)
     return label == type  # 预测是否正确
 
 
 if __name__ == '__main__':
 
-    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
-    test_cycles = 500  # 测试次数
+    test_cycles = 200  # 测试次数
     test_results = []
     for _ in range(test_cycles):
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测

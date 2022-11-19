@@ -15,14 +15,30 @@ from sensor.config import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
 from sensor.dataset import generate_dataset
 from sensor.utils import find_nearest
 
+FILE_PATH = "./models/gru_score.pth"
+DATASET_LENGTH = 100  # 数据集总长度
+TIME_SERIES_DURATION = 20  # 20s
+TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
+SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power曲线
+POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
+SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
+
+EPOCHS = 200  # 训练数据集的轮次
+LEARNING_RATE = 1e-3  # 学习率
+BATCH_SIZE = 64  # 每批处理的数据
+FORCE_CPU = True  # 强制使用CPU
+DEVICE = torch.device('cuda' if torch.cuda.is_available()
+                      and not FORCE_CPU else 'cpu')
+CHANNELS = len(SERIES_TO_ENCODE)  # 通道数
+TRAIN_ONLY_WITH_NORMAL = True  # 只用正常数据训练（！使用故障样本训练会无法收敛！）
+
 
 class GRUScore(nn.Module):
-    def __init__(self, input_size, hidden_size, output_size, device, num_layers=1, dropout=0.5):
+    def __init__(self, input_size, hidden_size, output_size, num_layers=1, dropout=0.5):
         super(GRUScore, self).__init__()
         self.hidden_size = hidden_size
         self.num_layers = num_layers
         self.dropout = dropout
-        self.device = device
         self.gru = nn.GRU(input_size, hidden_size,
                           num_layers, batch_first=True, dropout=self.dropout if num_layers > 1 else 0)
         self.fc = nn.Sequential(
@@ -37,7 +53,7 @@ class GRUScore(nn.Module):
     def forward(self, x):
         # Set initial hidden and cell states
         h0 = torch.zeros(
-            self.num_layers, x.shape[0], self.hidden_size).to(self.device)
+            self.num_layers, x.shape[0], self.hidden_size, device=DEVICE)
         # Forward propagate RNN
         out, _ = self.gru(x, h0)
         # Decode the hidden state of the last time step
@@ -65,24 +81,6 @@ class GRUScore(nn.Module):
                 param.data.fill_(0)
 
 
-FILE_PATH = "./models/gru_score.pth"
-DATASET_LENGTH = 100  # 数据集总长度
-TIME_SERIES_DURATION = 20  # 20s
-TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
-SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power曲线
-POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
-SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
-
-EPOCHS = 200  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
-BATCH_SIZE = 64  # 每批处理的数据
-FORCE_CPU = True  # 强制使用CPU
-DEVICE = torch.device('cuda' if torch.cuda.is_available()
-                      and not FORCE_CPU else 'cpu')
-CHANNELS = len(SERIES_TO_ENCODE)  # 通道数
-TRAIN_ONLY_WITH_NORMAL = True  # 只用正常数据训练（！使用故障样本训练会无法收敛！）
-
-
 def get_dataloader():
     x, seg_indexs, _ = generate_dataset(DATASET_LENGTH, TIME_SERIES_LENGTH,
                                         sample_type="normal" if TRAIN_ONLY_WITH_NORMAL else None,
@@ -108,8 +106,7 @@ def get_dataloader():
 
 model = GRUScore(input_size=CHANNELS,
                  hidden_size=SEQ_LENGTH,
-                 output_size=1,
-                 device=DEVICE)
+                 output_size=1).to(DEVICE)
 criterion = nn.CrossEntropyLoss()
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 
@@ -118,6 +115,8 @@ def train():
     dataloader = get_dataloader()
     for epoch in range(EPOCHS):
         for i, (x, y) in enumerate(dataloader):
+            x = x.to(DEVICE)
+            y = y.to(DEVICE)
             # print(x.shape, y.shape)
             # Forward pass
             outputs = model(x)
@@ -139,9 +138,9 @@ def predict(t) -> np.ndarray:
     assert seq_len == SEQ_LENGTH
     assert os.path.exists(FILE_PATH), "please train() first"
 
-    model = torch.load(FILE_PATH)
+    model = torch.load(FILE_PATH).to(DEVICE)
     input = t.transpose(0, 2, 1)
-    input = torch.from_numpy(input).float()
+    input = torch.from_numpy(input).float().to(DEVICE)
     out = model(input)
     out = out.detach().cpu().numpy()
     return out.squeeze()

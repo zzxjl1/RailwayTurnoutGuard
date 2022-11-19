@@ -13,7 +13,7 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
 from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
-from sensor.dataset import generate_dataset, parse_sample
+from sensor.dataset import generate_dataset, get_sample, parse_sample
 
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的采样点数
 TIME_SERIES_DURATION = 10  # 输入模型的时间序列时长为10s
@@ -73,7 +73,7 @@ def get_dataloader(type):
 
 def loss_batch(model, x, is_train):
     if is_train:
-        y = x + torch.randn(x.shape) * 0.25  # 加入噪声
+        y = x + torch.randn(x.shape, device=DEVICE) * 0.25  # 加入噪声
         result = model(y)  # 将加了噪声的数据输入模型
     else:
         result = model(x)
@@ -91,6 +91,7 @@ def train(type="normal"):
     for epoch in range(EPOCHS):
         model.train()
         for i, (x,) in enumerate(train_dl):
+            x = x.to(DEVICE)
             loss_batch(model, x, is_train=True)
 
         model.eval()
@@ -110,7 +111,7 @@ def train_all():
         train(type)
 
 
-def predict(x):
+def predict_raw_input(x):
     assert x.dim() == 1  # 一维
     assert len(x) == TOTAL_LENGTH  # 确保长度正确
     results = {}
@@ -119,7 +120,7 @@ def predict(x):
         model_path = f"{FILE_PATH}{type}.pth"
         assert os.path.exists(
             model_path), f"model {type} not found, please train first"
-        model = torch.load(model_path)
+        model = torch.load(model_path).to(DEVICE)
         model.eval()
         with torch.no_grad():
             result = model(x)
@@ -173,18 +174,19 @@ def draw(y_before, y_after, title=""):
     plt.show()
 
 
+def predict(sample, show_plt=False):
+    x = model_input_parse(sample)
+    results, losses = predict_raw_input(x)
+    if show_plt:
+        visualize_prediction_result(x, results, losses)
+    return results, losses
+
+
 def test(type="normal", show_plt=False):
     """生成一个样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
-    y, _, _ = generate_dataset(dataset_length=1,
-                               time_series_length=TIME_SERIES_LENGTH,
-                               sample_type=type,
-                               pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                               series_to_encode=SERIES_TO_ENCODE)
-    y_before = torch.tensor(y, dtype=torch.float).to(DEVICE)
-    y_before = y_before.view(TOTAL_LENGTH)
-    results, losses = predict(y_before)
-    if show_plt:
-        visualize_prediction_result(y_before, results, losses)
+    sample, _ = get_sample(type)
+    print(f"sample type: {type}")
+    results, losses = predict(sample, show_plt)
     return losses
 
 

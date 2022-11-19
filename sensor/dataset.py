@@ -65,9 +65,12 @@ def generate_dataset(dataset_length,
     """生成数据集"""
     x, seg_indexs, types = [], [], []
     for _ in range(dataset_length):
-
-        type = sample_type if sample_type is not None else random.choice(
-            SUPPORTED_SAMPLE_TYPES)
+        if sample_type is None:
+            type = random.choice(SUPPORTED_SAMPLE_TYPES)
+        if isinstance(sample_type, list):
+            type = random.choice(sample_type)
+        else:
+            type = sample_type
         sample, segmentations = get_sample(type)
         array_sample, seg_index = parse_sample(sample,
                                                segmentations,

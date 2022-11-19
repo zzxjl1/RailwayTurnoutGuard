@@ -21,8 +21,8 @@ from gru_score import GRUScore
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILE_PATH = "./models/transformer_classification.pth"
-DATASET_LENGTH = 100  # 数据集总长度
-EPOCHS = 200  # 训练数据集的轮次
+DATASET_LENGTH = 200  # 数据集总长度
+EPOCHS = 500  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
@@ -51,14 +51,16 @@ class TransformerLayer(nn.Module):
         self.input_vector_size = input_vector_size
         self.transformer = nn.TransformerEncoderLayer(input_vector_size,
                                                       nhead=1,
-                                                      dim_feedforward=512,
+                                                      dim_feedforward=256,
                                                       dropout=dropout_rate,
                                                       batch_first=True,
                                                       device=DEVICE)
-        self.out = nn.Linear(input_vector_size, 1)
+        self.fc = nn.Linear(input_vector_size, CHANNELS)
+        self.out = nn.Linear(CHANNELS, 1)
 
     def forward(self, x):
         x = self.transformer(x)
+        x = self.fc(x)
         x = self.out(x)
         x = x.squeeze(2)
         return x
@@ -87,6 +89,7 @@ class TransformerClassification(nn.Module):
         x = self.fc2(x)
         x = F.relu(x)
         x = self.out(x)
+        x = F.relu(x)
         x = F.softmax(x, dim=1)
         return x
 

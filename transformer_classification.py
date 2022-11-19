@@ -66,6 +66,7 @@ class TransformerLayer(nn.Module):
         return x
 
 
+"""
 class RNNLayer(nn.Module):
     def __init__(self, input_vector_size, hidden_size=128, num_layers=1, dropout_rate=0.5):
         super(RNNLayer, self).__init__()
@@ -85,15 +86,16 @@ class RNNLayer(nn.Module):
         h0 = torch.zeros(self.num_layers,
                          x.size(0),
                          self.hidden_size).to(DEVICE)
-        c0 = torch.zeros(self.num_layers,
-                         x.size(0),
-                         self.hidden_size).to(DEVICE)
+        # c0 = torch.zeros(self.num_layers,
+        #                 x.size(0),
+        #                 self.hidden_size).to(DEVICE)
         #x, _ = self.rnn(x, (h0, c0))
         x, _ = self.rnn(x, h0)
         x = self.fc(x)
         x = self.out(x)
         x = x.squeeze(2)
         return x
+"""
 
 
 class TransformerClassification(nn.Module):
@@ -101,9 +103,12 @@ class TransformerClassification(nn.Module):
         super(TransformerClassification, self).__init__()
         self.input_vector_size = input_vector_size
         self.output_vector_size = output_vector_size
-        self.transformer_stage_1 = TransformerLayer(input_vector_size)
-        self.transformer_stage_2 = TransformerLayer(input_vector_size)
-        self.transformer_stage_3 = TransformerLayer(input_vector_size)
+        self.transformer_stage_1 = TransformerLayer(
+            input_vector_size).to(DEVICE)
+        self.transformer_stage_2 = TransformerLayer(
+            input_vector_size).to(DEVICE)
+        self.transformer_stage_3 = TransformerLayer(
+            input_vector_size).to(DEVICE)
 
         input_length = time_to_index(STAGE_1_DURATION) + time_to_index(
             STAGE_2_DURATION) + time_to_index(STAGE_3_DURATION)
@@ -182,6 +187,7 @@ def model_input_parse(sample, segmentations=None, batch_simulation=True):
         stage_2 = stage_2[np.newaxis, :, :]
         stage_3 = stage_3[np.newaxis, :, :]
 
+    #print(stage_1.shape, stage_2.shape, stage_3.shape)
     return stage_1, stage_2, stage_3
 
 
@@ -257,14 +263,21 @@ def predict_raw_input(stage_1, stage_2, stage_3):
     return output
 
 
+def predict(sample, segmentations=None):
+    stage_1, stage_2, stage_3 = model_input_parse(
+        sample,
+        segmentations,
+        batch_simulation=True
+    )  # 转换为模型输入格式
+    output = predict_raw_input(stage_1, stage_2, stage_3)
+    return output
+
+
 def test(type=None):
     if type is None:
         type = random.choice(SUPPORTED_SAMPLE_TYPES)
     sample, segmentations = get_sample(type)  # 生成样本
-    stage_1, stage_2, stage_3 = model_input_parse(sample, segmentations)
-    print(stage_1.shape, stage_2.shape, stage_3.shape)
-    output = predict_raw_input(stage_1, stage_2, stage_3)
-    print(output)
+    output = predict(sample, segmentations)
     result_pretty = parse_predict_result(output)  # 解析结果
     print(result_pretty)
     label = get_label_from_result_pretty(result_pretty)  # 获取结果

@@ -112,5 +112,5 @@ if __name__ == "__main__":
         calc_segmentation_points(sample, show_plt=True)  # 计算分割点
 
         model_input = model_input_parse(sample)  # ae模型输入
-        results, losses = predict_raw_input(model_input)  # ae预测
-        visualize_prediction_result(model_input, results, losses)
+        results, confidences = predict_raw_input(model_input)  # ae预测
+        visualize_prediction_result(model_input, results, confidences)

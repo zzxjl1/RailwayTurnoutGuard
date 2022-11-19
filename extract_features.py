@@ -64,17 +64,18 @@ def calc_features_per_stage(x, y, series_name, stage_name):
     return result
 
 
-def calc_features(sample):
+def calc_features(sample, segmentations=None):
     """
     计算整个sample（4个曲线*3个stage）的特征
     （stage时间跨度、最大值、最小值、平均值、中位数、Standard deviation、Peak factor、Fluctuation factor）*4个曲线*3个stage
     """
-    segmentation_points = calc_segmentation_points(sample)
+    if not segmentations:
+        segmentations = calc_segmentation_points(sample)
     features = OrderedDict()
     for name, series in sample.items():  # 遍历4个曲线
         x, y = series
         total_time_elipsed = x[-1]-x[0]  # 总用时
-        t = calc_features_single_series(x, y, segmentation_points, name)
+        t = calc_features_single_series(x, y, segmentations, name)
         features.update(t)  # 合并
     features["total_time_elipsed"] = total_time_elipsed
 

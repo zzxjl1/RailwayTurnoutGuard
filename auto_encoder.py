@@ -127,18 +127,29 @@ def predict_raw_input(x):
             results[type] = result
             loss = loss_func(result, x)
             losses[type] = loss.item()
-    return results, losses
+    losses = list(losses.values())
+    # 使用sigmoid函数将loss转换为概率
+    losses = [sigmoid(loss) for loss in losses]
+    # 翻转loss，使得loss越小，实际越大
+    confidences = [max(losses)-loss for loss in losses]
+    # 放缩到0-1之间
+    confidences = [(confidence - min(confidences)) / (max(confidences) - min(confidences))
+                   for confidence in confidences]
+    # key还原上
+    confidences = dict(zip(SUPPORTED_SAMPLE_TYPES, confidences))
+    return results, confidences
 
 
-def visualize_prediction_result(y_before, results, losses):
+def visualize_prediction_result(y_before, results, confidences):
     for ae_type in SUPPORTED_SAMPLE_TYPES:
-        loss = losses[ae_type]
+        loss = confidences[ae_type]
         y_after = results[ae_type]
-        draw(y_before, y_after, f"AutoEncoder type: {ae_type} - Loss: {loss}")
+        draw(y_before, y_after,
+             f"AutoEncoder type: {ae_type} - Confidence: {loss}")
 
-    plt.bar(range(len(losses)), losses.values(),
-            tick_label=list(losses.keys()))
-    plt.title(f"AutoEncoder Loss Result")
+    plt.bar(range(len(confidences)), confidences.values(),
+            tick_label=list(confidences.keys()))
+    plt.title(f"AutoEncoder Confidence Result")
     plt.show()
 
 
@@ -176,45 +187,40 @@ def draw(y_before, y_after, title=""):
 
 def predict(sample, show_plt=False):
     x = model_input_parse(sample)
-    results, losses = predict_raw_input(x)
+    results, confidences = predict_raw_input(x)
     if show_plt:
-        visualize_prediction_result(x, results, losses)
-    return results, losses
+        visualize_prediction_result(x, results, confidences)
+    return results, confidences
 
 
 def test(type="normal", show_plt=False):
     """生成一个样本，并进行正向传播，如果输出与输入相似，则说明模型训练成功"""
     sample, _ = get_sample(type)
     print(f"sample type: {type}")
-    results, losses = predict(sample, show_plt)
-    return losses
+    results, confidences = predict(sample, show_plt)
+    return confidences
+
+
+def sigmoid(x):
+    return 1 / (1 + np.exp(-x))
 
 
 if __name__ == "__main__":
-    def sigmoid(x):
-        return 1 / (1 + np.exp(-x))
 
     def get_result_matrix(show_plt):
-        d2_losses = []  # 二维loss矩阵
+        d2_confidences = []  # 二维confidence矩阵
         for type in SUPPORTED_SAMPLE_TYPES:
-            losses = test(type, show_plt)
-            losses = list(losses.values())
-            # 使用sigmoid函数将loss转换为概率
-            losses = [sigmoid(loss) for loss in losses]
-            # 翻转loss，使得loss越小，实际越大
-            losses = [max(losses)-loss for loss in losses]
-            # 放缩到0-1之间
-            losses = [(loss - min(losses)) / (max(losses) - min(losses))
-                      for loss in losses]
-            d2_losses.append(losses)
-        d2_losses = preprocessing.MinMaxScaler().fit_transform(d2_losses)  # 归一化
-        return d2_losses
+            confidences = test(type, show_plt)
+            d2_confidences.append(list(confidences.values()))
+        print("Confidence Matrix:", d2_confidences)
+        d2_confidences = preprocessing.MinMaxScaler().fit_transform(d2_confidences)  # 归一化
+        return d2_confidences
 
     # train_all()
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))
-    test_cycles = 5
+    test_cycles = 10
     for i in range(test_cycles):
         matrix += np.array(get_result_matrix(test_cycles == 1))
     matrix = matrix / test_cycles

@@ -1,5 +1,13 @@
 import torch
 from torch import nn
+from gru_score import GRUScore
+from sensor.config import SUPPORTED_SAMPLE_TYPES
+import transformer_classification
+import auto_encoder
+import bp_classification
+from transformer_classification import TransformerClassification, TransformerLayer
+from bp_classification import BP_Net
+from sensor.dataset import get_sample
 
 FILENAME = "./models/result_fusion.pth"
 BATCH_SIZE = 64  # 每批处理的数据
@@ -9,8 +17,8 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
 print('Using device:', DEVICE)
 EPOCHS = 100  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
-
-INPUT_VECTOR_SIZE = 0
+N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)
+INPUT_VECTOR_SIZE = 3 * N_CLASSES
 
 
 class FuzzyLayer(nn.Module):
@@ -103,4 +111,20 @@ class FusedFuzzyDeepNet(nn.Module):
 
 
 model = FusedFuzzyDeepNet(input_vector_size=INPUT_VECTOR_SIZE,
-                          fuzz_vector_size=30, num_class=12).to(DEVICE)  # 使用FNN模型
+                          fuzz_vector_size=128, num_class=N_CLASSES).to(DEVICE)  # FNN模型
+
+
+def predict(sample, segmentations):
+    bp_result = bp_classification.predict(sample, segmentations)
+    transformer_result = transformer_classification.predict(
+        sample, segmentations)
+    _, ae_result = auto_encoder.predict(sample)
+
+    print("bp_result:", bp_result)
+    print("transformer_result:", transformer_result)
+    print("ae_result:", ae_result)
+
+
+if __name__ == '__main__':
+    sample, segmentations = get_sample(type="normal")
+    predict(sample, segmentations)

@@ -202,9 +202,9 @@ def train():
     # torch.onnx.export(model, torch.randn(1, INPUT_VECTOR_SIZE),"model.onnx")  # 保存onnx格式模型
 
 
-def predict(sample):
+def predict(sample, segmentations=None):
     """预测"""
-    features = list(calc_features(sample).values())  # 计算特征
+    features = list(calc_features(sample, segmentations).values())  # 计算特征
     features = torch.tensor([features], dtype=torch.float)  # 转换为tensor
     result = predict_raw_input(features.to(DEVICE))  # 预测
     return result

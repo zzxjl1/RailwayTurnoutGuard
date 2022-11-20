@@ -158,7 +158,7 @@ def model_input_parse(sample, segmentations, batch_simulation=True):
 def predict(sample, segmentations=None):
     assert os.path.exists(
         FILE_PATH), "model file not exists, please train first"
-    model = torch.load(FILE_PATH).to(DEVICE)
+    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)
     model_input = model_input_parse(sample, segmentations)
     model.eval()
     with torch.no_grad():

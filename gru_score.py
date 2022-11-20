@@ -138,7 +138,7 @@ def predict(t) -> np.ndarray:
     assert seq_len == SEQ_LENGTH
     assert os.path.exists(FILE_PATH), "please train() first"
 
-    model = torch.load(FILE_PATH).to(DEVICE)
+    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)
     input = t.transpose(0, 2, 1)
     input = torch.from_numpy(input).float().to(DEVICE)
     out = model(input)

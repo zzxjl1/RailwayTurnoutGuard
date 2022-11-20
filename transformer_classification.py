@@ -252,7 +252,7 @@ def train():
 
 def predict_raw_input(stage_1, stage_2, stage_3):
     assert os.path.exists(FILE_PATH), "model not found，please train first"
-    model = torch.load(FILE_PATH).to(DEVICE)  # 加载模型
+    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     # 转tensor
     stage_1 = torch.tensor(stage_1, dtype=torch.float32).to(DEVICE)
     stage_2 = torch.tensor(stage_2, dtype=torch.float32).to(DEVICE)

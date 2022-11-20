@@ -21,7 +21,7 @@ from sensor import SUPPORTED_SAMPLE_TYPES, get_sample
 from gru_score import GRUScore
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 
-FILENAME = "./models/dnn_classification.pth"
+FILE_PATH = "./models/dnn_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
@@ -174,8 +174,8 @@ def generate_dataset(num):
 def predict_raw_input(x):
     """预测,输入为原始数据，直接入模型"""
     assert os.path.exists(
-        FILENAME), "model not found, please run train() first!"
-    model = torch.load(FILENAME).to(DEVICE)  # 加载模型
+        FILE_PATH), "model not found, please run train() first!"
+    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
     with torch.no_grad():
         output = model(x)
@@ -198,7 +198,7 @@ def train():
     train_dl, valid_dl = get_data(train_ds, valid_ds)  # 转换为dataloader
     fit(train_dl, valid_dl)  # 开始训练
 
-    torch.save(model, FILENAME)  # 保存模型
+    torch.save(model, FILE_PATH)  # 保存模型
     # torch.onnx.export(model, torch.randn(1, INPUT_VECTOR_SIZE),"model.onnx")  # 保存onnx格式模型
 
 

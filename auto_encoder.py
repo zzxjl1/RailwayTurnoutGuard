@@ -121,7 +121,7 @@ def predict_raw_input(x):
         model_path = f"{FILE_PATH}{type}.pth"
         assert os.path.exists(
             model_path), f"model {type} not found, please train first"
-        model = torch.load(model_path).to(DEVICE)
+        model = torch.load(model_path, map_location=DEVICE).to(DEVICE)
         model.eval()
         with torch.no_grad():
             result = model(x)

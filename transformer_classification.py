@@ -6,6 +6,7 @@
 import os
 import random
 from alive_progress import alive_bar
+from matplotlib import patches, pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -250,9 +251,71 @@ def train():
     torch.save(model, FILE_PATH)  # 保存模型
 
 
-def predict_raw_input(stage_1, stage_2, stage_3):
+def predict_raw_input(stage_1, stage_2, stage_3, show_plt=False):
+    class attentionVisualization:
+        def __init__(self):
+            self.clear()
+
+        def __call__(self, module, module_in, module_out):
+            module_in = np.array(module_in[0][0])
+            module_out = np.array(module_out[0][0])
+            if self.count == 0:
+                self.attention_weights = module_out
+                self.input = module_in
+            elif self.count < 3:
+                self.attention_weights = np.concatenate(
+                    (self.attention_weights, module_out), axis=0)
+                self.input = np.concatenate((self.input, module_in), axis=0)
+            self.borders.append(self.input.shape[0])
+            self.count += 1
+
+            if self.count == 3:
+                self.show()
+                self.clear()
+
+        def clear(self):
+            self.count = 0
+            self.attention_weights = None
+            self.input = None
+            self.borders = []
+
+        def show(self):
+            fig, _ = plt.subplots(4, 1, figsize=(8, 5), dpi=150)
+            fig.subplots_adjust(hspace=0.4)
+            for i in range(CHANNELS):
+                ax1 = plt.subplot(4, 1, i+1)
+                ax1.set_title("Channel {}".format(SERIES_TO_ENCODE[i]))
+                ax1.set_xticks([])
+                ax2 = ax1.twinx()
+                ax2.yaxis.tick_left()  # 将y轴的刻度线移到左边
+                ax2.plot(self.input[:, i], '#FC5A50', label='TimeSeries Input')
+                # ax2.plot(self.attention_weights[:, i],
+                #         'r', label='Attention Level')
+                ax1.pcolormesh(self.attention_weights[:, i].reshape(
+                    1, -1), cmap="Greens_r", alpha=0.7)
+                ax1.set_yticks([])
+                # 画竖线
+                for border in self.borders:
+                    ax1.axvline(x=border, color='k', linestyle='--')
+            lines, labels = ax2.get_legend_handles_labels()
+            heatmap_patch = patches.Rectangle(
+                (0, 0), 1, 1, fc="g", alpha=0.7)
+            fig.legend(lines+[heatmap_patch], labels +
+                       ["Attention Level Heatmap"], loc='upper right')
+            plt.show()
+
     assert os.path.exists(FILE_PATH), "model not found，please train first"
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
+
+    if show_plt:
+        show = attentionVisualization()
+        model.transformer_stage_1.transformer.self_attn.register_forward_hook(
+            show)
+        model.transformer_stage_2.transformer.self_attn.register_forward_hook(
+            show)
+        model.transformer_stage_3.transformer.self_attn.register_forward_hook(
+            show)
+
     # 转tensor
     stage_1 = torch.tensor(stage_1, dtype=torch.float32).to(DEVICE)
     stage_2 = torch.tensor(stage_2, dtype=torch.float32).to(DEVICE)
@@ -263,21 +326,21 @@ def predict_raw_input(stage_1, stage_2, stage_3):
     return output
 
 
-def predict(sample, segmentations=None):
+def predict(sample, segmentations=None, show_plt=False):
     stage_1, stage_2, stage_3 = model_input_parse(
         sample,
         segmentations,
         batch_simulation=True
     )  # 转换为模型输入格式
-    output = predict_raw_input(stage_1, stage_2, stage_3)
+    output = predict_raw_input(stage_1, stage_2, stage_3, show_plt)
     return output.squeeze()
 
 
-def test(type=None):
+def test(type=None, show_plt=False):
     if type is None:
         type = random.choice(SUPPORTED_SAMPLE_TYPES)
     sample, segmentations = get_sample(type)  # 生成样本
-    output = predict(sample, segmentations)
+    output = predict(sample, segmentations, show_plt)
     result_pretty = parse_predict_result(output)  # 解析结果
     print(result_pretty)
     label = get_label_from_result_pretty(result_pretty)  # 获取结果
@@ -288,6 +351,9 @@ def test(type=None):
 if __name__ == "__main__":
 
     # train()
+
+    test(type="H5", show_plt=True)
+
     test_cycle = 200
     accuracy = sum([test() for _ in range(test_cycle)])/test_cycle
     print("accuracy: {}".format(accuracy))

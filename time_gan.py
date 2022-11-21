@@ -284,7 +284,7 @@ class TimeGAN:
         print("Saving model complete!!!")
 
     def load_model(self, path):
-        check_point = torch.load(path)
+        check_point = torch.load(path, map_location=DEVICE)
         self.embedder.network.load_state_dict(
             check_point["embedder_state_dict"])
         self.recovery.network.load_state_dict(
@@ -635,12 +635,6 @@ class TimeGAN:
             self.save_model()
 
 
-def draw(x, title=""):
-    plt.plot(x)
-    plt.title(title)
-    plt.show()
-
-
 DATASET_LENGTH = 5000  # 数据集总长度
 TIME_SERIES_DURATION = 20  # 20s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
@@ -651,9 +645,11 @@ EPOCHS = 10000  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
+DEVICE = torch.device("cuda" if torch.cuda.is_available()
+                      and not FORCE_CPU else "cpu")
 
 model_params = {
-    "device": torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu"),
+    "device": DEVICE,
     "hidden_dim": 120,
     "num_layer": 3,
     "iterations": EPOCHS,
@@ -666,7 +662,7 @@ model_params = {
 }
 
 
-def generate(type, num=1):
+def generate(type, num=1, show_plot=False):
     max_val_range_dict = {
         "F1": (0.3, 0.5),
         "F2": (0, 0.01)
@@ -681,10 +677,17 @@ def generate(type, num=1):
         num, TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES)
     result = np.array(fake_data)
     result = result.transpose(0, 2, 1)
-    print(result.shape)
+    # print(result.shape)
 
-    for i in range(result.shape[1]):
-        draw(result[0][i], "generated")
+    if show_plot:
+        for sample in result:  # 如果一次生成多个样本，则循环显示
+            for i, channel in enumerate(sample):  # 多个通道
+                plt.plot(channel, label=SERIES_TO_ENCODE[i])
+            plt.title(f"TimeGAN Generation Result - Type: {type}")
+            plt.legend(loc="upper right")
+            plt.show()
+
+    return result
 
 
 def train(type):
@@ -693,9 +696,32 @@ def train(type):
     model.train()
 
 
-if __name__ == "__main__":
+def train_all():
     for type in SUPPORTED_SAMPLE_TYPES:
+        print(f"Training for type: {type}")
         train(type)
 
-        # print(type)
-        generate(type)
+
+if __name__ == "__main__":
+
+    # train_all()
+    fig, _ = plt.subplots(3, 4, figsize=(10, 10), dpi=150)
+    fig.subplots_adjust(hspace=0.5)
+    for i, type in enumerate(SUPPORTED_SAMPLE_TYPES):
+        sample = generate(type, num=1, show_plot=False)[0]
+        plt.subplot(3, 4, i+1)
+        # 坐标从0开始
+        plt.xlim(0, TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES)
+        plt.ylim(0, 5)
+        plt.xticks([])
+        plt.yticks([])
+        plt.title(type, fontsize=10)
+        lines = []
+        labels = []
+        for i, channel in enumerate(sample):  # 多个通道
+            line = plt.plot(channel)
+            lines.append(line)
+            labels.append(SERIES_TO_ENCODE[i])
+    fig.legend(lines, labels=labels, loc="upper right")
+    plt.suptitle("TimeGAN Generation Result")
+    plt.show()

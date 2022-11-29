@@ -43,6 +43,10 @@ def validate(i):
         t = read_row(i+j)  # 获取第i+j行的数据
         if t["curve_type"] != CurveType[seq[j]].value:  # 顺序不匹配
             return False
+        """
+        if t["current_type"] != CurrentType.DC.value:  # 电流类型不匹配
+            return False
+        """
         return True
 
 
@@ -76,12 +80,6 @@ def get_all_samples():
     row = df.shape[0]  # 总行数
     i = 0
     while i < row:  # 遍历每一行
-
-        """
-        if t["current_type"] == CurrentType.DC.value: # 过滤直流转辙机
-            i += 1
-            continue
-        """
 
         if not validate(i):  # 过滤非法数据
             i += 1

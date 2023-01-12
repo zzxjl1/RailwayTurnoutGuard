@@ -23,10 +23,12 @@ def get_d(s, smooth=True, show_plt=False, name=""):
         y = savgol_filter(y, window_length=7, polyorder=3)
         y = savgol_filter(y, window_length=5, polyorder=1)
     if show_plt:  # debug usage
-        plt.plot(x, y, label='original values')
+        plt.figure(dpi=150, figsize=(9, 2))
+        plt.plot(*s, label='original values')
         plt.plot(x, y, label="curve after filtering")
         plt.legend(loc='best')
         plt.title(f"{name} input")
+        plt.xlabel("Time(s)")
         plt.show()
     assert len(x) > 2  # 算法要求至少需要2个点
     result = []
@@ -35,7 +37,8 @@ def get_d(s, smooth=True, show_plt=False, name=""):
         result.append(t)
     assert len(result) == len(x)-1  # 斜率数组的个数比点的个数少1
     if show_plt:  # debug usage
-        draw_line(x, result+[0], title=f"{name} output")
+        draw_line(x, result+[0],
+                  title=f"{name} output", y_label="Result Value")
     return x, result+[0]  # 返回斜率
 
 
@@ -95,6 +98,7 @@ def draw_line(x=None, y=None, title="", y_label="", is_dot=False):
     assert y is not None
     if x is None:  # 如果没有x值，就用y值的索引作为x值
         x = [i for i in range(len(y))]
+    plt.figure(dpi=150, figsize=(9, 2))
     plt.plot(x, y, "o" if is_dot else "b")
     plt.title(title)
     plt.xlabel("Time(s)")
@@ -129,7 +133,7 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
         ax1 = ax.twinx()  # 生成第二个y轴
         ax2 = ax.twinx()  # 生成第三个y轴
         #ax2.plot(*d1_result, label="d1")
-        ax2.plot(*d2_result, label="Lagacy Scheme Confidence", color="red",
+        ax2.plot(*d2_result, label="Legacy Scheme Confidence", color="red",
                  linewidth=1, alpha=0.2)
         ax1.plot(x, y, label="Time Series", color="blue")
         ax1.set_yticks([])  # 不显示y轴

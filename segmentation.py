@@ -68,10 +68,11 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
     return index, result
 
 
-def find_segmentation_point_2(x, y, segmentation_point_1_index, gru_score):
+def find_segmentation_point_2(x, y, original_series, segmentation_point_1_index, gru_score):
     """寻找第二个分段点（between stage 2 and stage 3）"""
-
+    _, series_y = original_series
     # 切掉stage 1
+    series_y = series_y[segmentation_point_1_index:]
     x, y = x[segmentation_point_1_index:], y[segmentation_point_1_index:]
     peak_idx, properties = find_peaks(y, prominence=0)  # 寻找峰值
     prominences = properties["prominences"]  # 峰值的详细参数
@@ -82,10 +83,14 @@ def find_segmentation_point_2(x, y, segmentation_point_1_index, gru_score):
     #print("peak_point_available: ", np.array(x)[peak_idx])
     scores = []  # 用于存储每个峰值的分数
     for i in range(len(prominences)):
-        sec = x[peak_idx[i]]  # 峰值的时间
-        score = get_score_by_time(gru_score, sec)  # 根据时间获取分数
-        scores.append(prominences[i] * score)
-        print(sec, prominences[i], score)
+        index = peak_idx[i]
+        time_in_sec = x[index]  # 峰值的时间
+        stage2_avg = np.mean(series_y[:index])  # stage 2的平均值
+        stage3_avg = np.mean(series_y[index:])  # stage 3的平均值
+        score = get_score_by_time(gru_score, time_in_sec) * prominences[i] * \
+            (abs(y[index] - stage2_avg)/abs(y[index]-stage3_avg))
+        scores.append(score)
+        print(time_in_sec, prominences[i], score)
     index = np.argmax(scores)  # 找到得分最高，返回第几个峰的索引
     index = peak_idx[index]  # 点的索引
     result = x[index]  # 峰值的x值（时间）
@@ -118,7 +123,7 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
     segmentation_point_1_index, segmentation_point_1_x = find_segmentation_point_1(
         *d2_result)  # 寻找第一个分段点
     _, segmentation_point_2_x = find_segmentation_point_2(
-        *d2_result, segmentation_point_1_index, gru_score)  # 寻找第二个分段点
+        *d2_result, series, segmentation_point_1_index, gru_score)  # 寻找第二个分段点
     if show_plt:  # debug usage
         fig = plt.figure(dpi=150, figsize=(9, 4))
         ax = fig.subplots()
@@ -133,7 +138,7 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
         ax1 = ax.twinx()  # 生成第二个y轴
         ax2 = ax.twinx()  # 生成第三个y轴
         #ax2.plot(*d1_result, label="d1")
-        ax2.plot(*d2_result, label="Legacy Scheme Confidence", color="red",
+        ax2.plot(*d2_result, label="Legacy Scheme", color="red",
                  linewidth=1, alpha=0.2)
         ax1.plot(x, y, label="Time Series", color="blue")
         ax1.set_yticks([])  # 不显示y轴

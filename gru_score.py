@@ -23,14 +23,14 @@ SERIES_TO_ENCODE = ['A', 'B', 'C']  # 生成三相电流序列，不生成power�
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
 SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
 
-EPOCHS = 200  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
+EPOCHS = 1000  # 训练数据集的轮次
+LEARNING_RATE = 1e-4  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available()
                       and not FORCE_CPU else 'cpu')
 CHANNELS = len(SERIES_TO_ENCODE)  # 通道数
-TRAIN_ONLY_WITH_NORMAL = True  # 只用正常数据训练（！使用故障样本训练会无法收敛！）
+TRAIN_ONLY_WITH_NORMAL = False  # 只用正常数据训练（！使用故障样本训练会无法收敛！）
 
 
 class GRUScore(nn.Module):
@@ -42,9 +42,9 @@ class GRUScore(nn.Module):
         self.gru = nn.GRU(input_size, hidden_size,
                           num_layers, batch_first=True, dropout=self.dropout if num_layers > 1 else 0)
         self.fc = nn.Sequential(
-            nn.Linear(hidden_size, output_size*3),
-            nn.Linear(output_size*3, output_size*2),
-            nn.Linear(output_size*2, output_size),
+            nn.Linear(hidden_size, 64),
+            nn.Linear(64, 8),
+            nn.Linear(8, 1),
         )
         self.activation = nn.ReLU()
 
@@ -205,6 +205,6 @@ def model_input_parse(sample):
 
 
 if __name__ == "__main__":
-    # train()
+    train()
     for type in SUPPORTED_SAMPLE_TYPES:
         test(type)

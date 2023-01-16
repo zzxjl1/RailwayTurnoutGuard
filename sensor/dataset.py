@@ -67,7 +67,7 @@ def generate_dataset(dataset_length,
     for _ in range(dataset_length):
         if sample_type is None:
             type = random.choice(SUPPORTED_SAMPLE_TYPES)
-        if isinstance(sample_type, list):
+        elif isinstance(sample_type, list):
             type = random.choice(sample_type)
         else:
             type = sample_type

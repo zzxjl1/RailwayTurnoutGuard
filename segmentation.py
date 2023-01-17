@@ -1,6 +1,7 @@
 """
 对曲线进行分割，得到分段点
 """
+from sklearn.neighbors import LocalOutlierFactor as LOF
 from gru_score import get_score_by_time, time_to_index, GRUScore, model_input_parse
 from gru_score import predict as gru_predict_score
 from matplotlib import patches, pyplot as plt
@@ -181,11 +182,21 @@ def calc_segmentation_points(sample, show_plt=False):
     # print(result)
     # 做了一个融合，不同曲线算出的分段点可能不同，因此需要取最佳的分段点
     pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]
-    # pt1和pt2中出现次数最多的值
-    #final_result = max(set(pt1), key=pt1.count), max(set(pt2), key=pt2.count)
-    # 求平均值
+    # 去除None
     pt1, pt2 = [i for i in pt1 if i is not None], [
         i for i in pt2 if i is not None]
+    # 去除离群点
+
+    def remove_outlier(pt):
+        pt = np.array(pt).reshape(-1, 1)
+        result = LOF(n_neighbors=1).fit_predict(pt)
+        # print(result)
+        return [pt[i] for i in range(len(pt)) if result[i] == 1]
+
+    pt1 = remove_outlier(pt1)
+    pt2 = remove_outlier(pt2)
+    print(pt1, pt2)
+    # 求平均值
     final_result = np.mean(pt1) if pt1 else None, np.mean(pt2) if pt2 else None
     # 特殊情况：如果第二个分段点小于等于第一个分段点，丢弃
     if final_result[0] and final_result[1] and final_result[1] <= final_result[0]:

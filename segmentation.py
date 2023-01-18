@@ -62,10 +62,10 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
         threshold -= 1  # 降低“自适应阈值”
         print("applying adaptive threshhold: ", threshold)
         return find_segmentation_point_1(x, y, threshold)
-    #print("peak_point_available: ", np.array(x)[peak_idx])
+    # print("peak_point_available: ", np.array(x)[peak_idx])
     index = peak_idx[1]  # 点的索引
     result = x[index]  # 点的x值（时间）
-    #print("segmentation point 1: ", result)
+    # print("segmentation point 1: ", result)
     return index, result
 
 
@@ -81,7 +81,7 @@ def find_segmentation_point_2(x, y, original_series, segmentation_point_1_index,
     if len(peak_idx) == 0 or len(prominences) == 0:  # 没有找到峰值，说明分段点不存在
         print("segmentation point 2 not found")
         return None, None
-    #print("peak_point_available: ", np.array(x)[peak_idx])
+    # print("peak_point_available: ", np.array(x)[peak_idx])
     scores = []  # 用于存储每个峰值的分数
     for i in range(len(prominences)):
         index = peak_idx[i]
@@ -95,7 +95,7 @@ def find_segmentation_point_2(x, y, original_series, segmentation_point_1_index,
     index = np.argmax(scores)  # 找到得分最高，返回第几个峰的索引
     index = peak_idx[index]  # 点的索引
     result = x[index]  # 峰值的x值（时间）
-    #print("segmentation point 2: ", result)
+    # print("segmentation point 2: ", result)
     return index, result
 
 
@@ -135,10 +135,10 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
         ax_new.set_xticks([])  # 不显示x轴
         ax_new.pcolormesh(gru_score[:time_to_index(duration)].reshape(
             1, -1), cmap="Reds", alpha=0.7)
-        #ax_new.plot(*model_output_to_xy(gru_score, end_sec=duration), "r")
+        # ax_new.plot(*model_output_to_xy(gru_score, end_sec=duration), "r")
         ax1 = ax.twinx()  # 生成第二个y轴
         ax2 = ax.twinx()  # 生成第三个y轴
-        #ax2.plot(*d1_result, label="d1")
+        # ax2.plot(*d1_result, label="d1")
         ax2.plot(*d2_result, label="Legacy Scheme", color="red",
                  linewidth=1, alpha=0.2)
         ax1.plot(x, y, label="Time Series", color="blue")
@@ -168,9 +168,9 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
 def calc_segmentation_points(sample, show_plt=False):
     """计算整个样本（4条线）的分段点"""
     model_input = model_input_parse(sample)
-    #print("model_input: ", model_input.shape)
+    # print("model_input: ", model_input.shape)
     gru_score = gru_predict_score(model_input)
-    #print("gru_score: ", gru_score)
+    # print("gru_score: ", gru_score)
     # print(gru_score.shape)
 
     result = {}
@@ -206,8 +206,46 @@ def calc_segmentation_points(sample, show_plt=False):
 
 
 if __name__ == "__main__":
-    #sample, segmentations = generate_sample()
+    # sample, segmentations = generate_sample()
     # calc_segmentation_points(sample)
+
+    """
+    import matplotlib.colors as mcolors
+    from sensor.utils import find_nearest
+    from matplotlib.lines import Line2D
+
+    plt.figure(figsize=(15, 8), dpi=150)
+    ax = plt.subplot(projection='3d')
+    # 12种颜色
+    colors = ["teal", "purple", "royalblue", "gold", "darkslategrey", "darkviolet",
+              "purple", "olivedrab", "dodgerblue", "slategray", "deepskyblue", "seagreen"]
+    for type_index, type in enumerate(SUPPORTED_SAMPLE_TYPES):
+        sample, segmentations = get_sample(type)
+        pt1, pt2 = segmentations
+        A, B, C = sample["A"], sample["B"], sample["C"]
+        color = colors[type_index]
+        for x, y in [A]:
+            ax.plot(x, y, zs=type_index, zdir='y', c=color)
+            # 标出分段点
+            for pt in [pt1, pt2]:
+                if pt is None:
+                    continue
+                # 获取分段点的索引
+                pt_index = find_nearest(x, pt)
+                ax.scatter(pt, type_index, y[pt_index], c="r", marker="o")
+    ax.set_xlabel("Time(s)")
+    ax.set_ylabel("Sample Type")
+    ax.set_yticklabels(SUPPORTED_SAMPLE_TYPES)
+    ax.set_yticks(range(len(SUPPORTED_SAMPLE_TYPES)))
+    ax.set_zlabel("Current(A)")
+    # Z轴范围
+    ax.set_zlim(0, 6)
+    ax.set_ylim(0, len(SUPPORTED_SAMPLE_TYPES)-1)
+    ax.set_xlim(0, 20)
+    plt.title("Segmentation Points of All Fault Types")
+    plt.tight_layout()
+    plt.show()
+    """
 
     for type in SUPPORTED_SAMPLE_TYPES:
         sample, segmentations = get_sample(type)

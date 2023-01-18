@@ -22,24 +22,97 @@ TRAINING_SET_LENGTH = 200  # 训练集长度
 TESTING_SET_LENGTH = 50  # 测试集长度
 SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂时不用
 CHANNELS = len(SERIES_TO_ENCODE)
+TOTAL_LENGTH = TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES
 
+MODEL_TO_USE = "BP"
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
 EPOCHS = 500  # 训练轮数
-
 FILE_PATH = './models/auto_encoder/'  # 模型保存路径
 FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
 
-TOTAL_LENGTH = TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES * CHANNELS  # 输入总长度
+
+if MODEL_TO_USE == "BP":
+    TOTAL_LENGTH *= CHANNELS  # 输入总长度
 print("total input length:", TOTAL_LENGTH)
 
-model = nn.Sequential(
+
+BP_AE = nn.Sequential(
     nn.Linear(TOTAL_LENGTH, round(TOTAL_LENGTH/5)),
     nn.Linear(round(TOTAL_LENGTH/5), TOTAL_LENGTH),
 ).to(DEVICE)  # 定义模型，很简单的AE,注意中间层的维度必须<<输入才有效
+
+
+class EncoderRNN(nn.Module):
+
+    def __init__(self, n_features, latent_dim, hidden_size):
+        super(EncoderRNN, self).__init__()
+
+        self.gru_enc = nn.GRU(n_features, hidden_size,
+                              batch_first=True, dropout=0,
+                              bidirectional=True)
+
+        self.lat_layer = nn.GRU(hidden_size*2, latent_dim,
+                                batch_first=True, dropout=0,
+                                bidirectional=False)
+
+    def forward(self, x):
+        x, _ = self.gru_enc(x)
+        x, h = self.lat_layer(x)
+        return x[:, -1].unsqueeze(1)
+
+
+class DecoderRNN(nn.Module):
+    def __init__(self, seq_len, n_features, latent_dim, hidden_size):
+        super(DecoderRNN, self).__init__()
+
+        self.seq_len = seq_len
+        self.hidden_size = hidden_size
+
+        self.gru_dec1 = nn.GRU(latent_dim, latent_dim,
+                               batch_first=True, dropout=0,
+                               bidirectional=False)
+
+        self.gru_dec2 = nn.GRU(latent_dim, hidden_size,
+                               batch_first=True, dropout=0,
+                               bidirectional=True)
+
+        self.output_layer = nn.Linear(
+            self.hidden_size*2, n_features, bias=True)
+        self.act = nn.ReLU()
+
+    def forward(self, x):
+        x = x.repeat(1, self.seq_len, 1)
+        x, _ = self.gru_dec1(x)
+        x, _ = self.gru_dec2(x)
+        return self.act(self.output_layer(x))
+
+
+class GRU_AE(nn.Module):
+    def __init__(self, seq_len, n_features, latent_dim, hidden_size):
+        super(GRU_AE, self).__init__()
+
+        self.seq_len = seq_len
+        self.encoder = EncoderRNN(
+            n_features, latent_dim, hidden_size).to(DEVICE)
+        self.decoder = DecoderRNN(
+            seq_len, n_features, latent_dim, hidden_size).to(DEVICE)
+
+    def forward(self, x):
+        x = self.encoder(x)
+        x = self.decoder(x)
+        return x
+
+
+models = {"BP": BP_AE, "GRU": GRU_AE(seq_len=TOTAL_LENGTH,
+                                     n_features=CHANNELS,
+                                     latent_dim=round(TOTAL_LENGTH/5),
+                                     hidden_size=round(TOTAL_LENGTH/5)).to(DEVICE)}
+
+model = models[MODEL_TO_USE]
 print(model)
 
 
@@ -61,9 +134,12 @@ def get_dataloader(type):
                                   series_to_encode=SERIES_TO_ENCODE)
     DATASET = torch.tensor(temp, dtype=torch.float,
                            requires_grad=True).to(DEVICE)  # 转换为tensor
-    # 通道合并
-    DATASET = DATASET.view(-1, TOTAL_LENGTH)
-    print(DATASET.shape)
+    if MODEL_TO_USE == "BP":
+        # 通道合并
+        DATASET = DATASET.view(-1, TOTAL_LENGTH)
+    elif MODEL_TO_USE == "GRU":
+        DATASET = DATASET.transpose(2, 1)
+    print("dataset shape:", DATASET.shape)
     train_ds = TensorDataset(DATASET[:TRAINING_SET_LENGTH])
     test_ds = TensorDataset(DATASET[TRAINING_SET_LENGTH:])
 
@@ -72,12 +148,16 @@ def get_dataloader(type):
     return train_dl, test_dl
 
 
+NOISE_AMPLITUDE = 0.25
+
+
 def loss_batch(model, x, is_train):
     if is_train:
-        y = x + torch.randn(x.shape, device=DEVICE) * 0.25  # 加入噪声
+        y = x + torch.randn(x.shape, device=DEVICE) * NOISE_AMPLITUDE  # 加入噪声
         result = model(y)  # 将加了噪声的数据输入模型
     else:
         result = model(x)
+    #print(result.shape, x.shape)
     loss = loss_func(result, x)  # 目标值为没加噪声的x
     loss.requires_grad_(True)
     loss.backward()
@@ -113,8 +193,12 @@ def train_all():
 
 
 def predict_raw_input(x):
-    assert x.dim() == 1  # 一维
-    assert len(x) == TOTAL_LENGTH  # 确保长度正确
+    if MODEL_TO_USE == "BP":
+        assert x.dim() == 1  # 一维
+        assert len(x) == TOTAL_LENGTH  # 确保长度正确
+    elif MODEL_TO_USE == "GRU":
+        assert x.dim() == 3  # 三维
+        assert x.shape[1] == TOTAL_LENGTH
     results = {}
     losses = {}
     for type in SUPPORTED_SAMPLE_TYPES:
@@ -163,13 +247,20 @@ def model_input_parse(sample):
                              time_series_length=TIME_SERIES_LENGTH,
                              pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
                              series_to_encode=SERIES_TO_ENCODE)
-    result = result.reshape(TOTAL_LENGTH)
+    if MODEL_TO_USE == "BP":
+        result = result.reshape(TOTAL_LENGTH)
+    elif MODEL_TO_USE == "GRU":
+        result = result.transpose(1, 0)[np.newaxis, ...]
     return torch.tensor(result, dtype=torch.float).to(DEVICE)
 
 
 def draw(y_before, y_after, title=""):
-    y_before = y_before.view(CHANNELS, -1)
-    y_after = y_after.view(CHANNELS, -1)
+    if MODEL_TO_USE == "BP":
+        y_before = y_before.view(CHANNELS, -1)
+        y_after = y_after.view(CHANNELS, -1)
+    elif MODEL_TO_USE == "GRU":
+        y_before = y_before.squeeze().T
+        y_after = y_after.squeeze().T
     figure, (axes) = plt.subplots(CHANNELS, 1, figsize=(12, 5), dpi=150)
     for i in range(CHANNELS):
         ax = axes[i]
@@ -217,11 +308,11 @@ if __name__ == "__main__":
         d2_confidences = preprocessing.MinMaxScaler().fit_transform(d2_confidences)  # 归一化
         return d2_confidences
 
-    # train_all()
+    train_all()
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))
-    test_cycles = 10
+    test_cycles = 1
     for i in range(test_cycles):
         matrix += np.array(get_result_matrix(test_cycles == 1))
     matrix = matrix / test_cycles

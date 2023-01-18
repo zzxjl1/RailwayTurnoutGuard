@@ -1,3 +1,4 @@
+from sensor import get_sample, parse_sample
 import os
 from matplotlib import pyplot as plt
 import numpy as np
@@ -658,7 +659,8 @@ model_params = {
     "learning_rate": LEARNING_RATE,
     "use_wgan": False,
     "sample_type": None,
-    "channels": len(SERIES_TO_ENCODE)
+    "channels": len(SERIES_TO_ENCODE),
+    "max_val_range": None
 }
 
 
@@ -702,7 +704,55 @@ def train_all():
         train(type)
 
 
+def model_input_parse(sample):
+    """
+    将样本转换为模型输入的格式
+    """
+    result, _ = parse_sample(sample,
+                             segmentations=None,
+                             time_series_length=TIME_SERIES_LENGTH,
+                             pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+                             series_to_encode=SERIES_TO_ENCODE)
+    result = result.transpose(1, 0)[np.newaxis, ...]
+    return result
+
+
+def use_discriminator(x):
+    model = TimeGAN(model_params)
+    results = {}
+    for type in SUPPORTED_SAMPLE_TYPES:
+        file_path = f"./models/time_gan/{type}.pth"
+        assert os.path.exists(
+            file_path), "model not exists, please train() first!"
+        model.load_model(file_path)
+
+        T = [1]
+        X = torch.tensor(x, dtype=torch.float32, device=DEVICE)
+        H = model.embedder(X, T)
+        result = model.discriminator(H, T).squeeze()
+        loss = model.loss_bce(result, torch.ones_like(result)).item()
+        #print(type, loss)
+        results[type] = loss
+    # print(results)
+    losses = list(results.values())
+    # 翻转loss，使得loss越小，实际越大
+    confidences = [max(losses)-loss for loss in losses]
+    # 放缩到0-1之间
+    confidences = [(confidence - min(confidences)) / (max(confidences) - min(confidences))
+                   for confidence in confidences]
+    # key还原上
+    confidences = dict(zip(SUPPORTED_SAMPLE_TYPES, confidences))
+    print(confidences)  # 效果很不好，大概是因为模型没训练好或者不适合这种场景
+
+
 if __name__ == "__main__":
+    """
+    sample, _ = get_sample("H3")
+    model_input = model_input_parse(sample)
+    print(model_input.shape)
+    use_discriminator(model_input)
+    assert False
+    """
 
     # train_all()
     fig, _ = plt.subplots(3, 4, figsize=(10, 10), dpi=150)

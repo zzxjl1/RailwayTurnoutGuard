@@ -91,7 +91,7 @@ def find_segmentation_point_2(x, y, original_series, segmentation_point_1_index,
         score = get_score_by_time(gru_score, time_in_sec) * prominences[i] * \
             (abs(y[index] - stage2_avg)/abs(y[index]-stage3_avg))
         scores.append(score)
-        print(time_in_sec, prominences[i], score)
+        #print(time_in_sec, prominences[i], score)
     index = np.argmax(scores)  # 找到得分最高，返回第几个峰的索引
     index = peak_idx[index]  # 点的索引
     result = x[index]  # 峰值的x值（时间）
@@ -188,6 +188,8 @@ def calc_segmentation_points(sample, show_plt=False):
     # 去除离群点
 
     def remove_outlier(pt):
+        if not pt:
+            return pt
         pt = np.array(pt).reshape(-1, 1)
         result = LOF(n_neighbors=1).fit_predict(pt)
         # print(result)
@@ -195,7 +197,7 @@ def calc_segmentation_points(sample, show_plt=False):
 
     pt1 = remove_outlier(pt1)
     pt2 = remove_outlier(pt2)
-    print(pt1, pt2)
+    #print(pt1, pt2)
     # 求平均值
     final_result = np.mean(pt1) if pt1 else None, np.mean(pt2) if pt2 else None
     # 特殊情况：如果第二个分段点小于等于第一个分段点，丢弃

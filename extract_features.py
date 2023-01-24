@@ -10,8 +10,7 @@ from collections import OrderedDict
 import matplotlib.pyplot as plt
 from gru_score import GRUScore
 
-IGNORE_LIST = ["A_stage1_min", "B_stage1_min", "C_stage1_min", "power_stage1_min",
-               "A_stage3_min", "B_stage3_min", "C_stage3_min", "power_stage3_min"]
+IGNORE_LIST = []
 
 
 def calc_features_per_stage(x, y, series_name, stage_name):
@@ -20,71 +19,56 @@ def calc_features_per_stage(x, y, series_name, stage_name):
     result = OrderedDict()
 
     if x is not None and y is not None:
-        result[f"{series_name}_{stage_name}_time_span"] = x[-1]-x[0]  # 时间跨度
-        result[f"{series_name}_{stage_name}_max"] = max(y)  # 最大值
-        result[f"{series_name}_{stage_name}_min"] = min(y)  # 最小值
-        result[f"{series_name}_{stage_name}_mean"] = sum(y)/len(y)  # 平均值
-        result[f"{series_name}_{stage_name}_median"] = sorted(y)[
-            len(y)//2]  # 中位数
-        result[f"{series_name}_{stage_name}_std"] = (sum([(i-result[f"{series_name}_{stage_name}_mean"])**2 for i in y]) /
-                                                     len(y))**0.5  # Standard deviation
-        result[f"{series_name}_{stage_name}_kurtosis"] = sum(
-            [(i-result[f"{series_name}_{stage_name}_mean"])**4 for i in y]) / len(y)  # 峭度
-        result[f"{series_name}_{stage_name}_rms"] = (
-            sum([i**2 for i in y]) / len(y))**0.5  # 均方根
+        result["time_span"] = x[-1]-x[0]  # 时间跨度
+        result["max"] = max(y)  # 最大值
+        result["min"] = min(y)  # 最小值
+        result["mean"] = sum(y)/len(y)  # 平均值
+        result["mean_abs"] = sum([abs(i) for i in y])/len(y)  # 平均绝对值
+        result["median"] = sorted(y)[len(y)//2]  # 中位数
+        result["std"] = (sum([(i-result["mean"])**2 for i in y]
+                             ) / len(y))**0.5  # Standard deviation
+        result["rms"] = (sum([i**2 for i in y]) / len(y))**0.5  # 均方根
+        result["peak_to_peak"] = max(y)-min(y)  # 峰峰值
+        result["skewness"] = sum(
+            [((i-result["mean"])/result["std"])**3 for i in y]) / len(y)
+        result["kurtosis"] = sum(
+            [((i-result["mean"])/result["std"])**4 for i in y]) / len(y)  # 峭度
 
-        if sum(y)/len(y) != 0:  # 防止除数为0
-            result[f"{series_name}_{stage_name}_impluse_factor"] = max(
-                y)/(sum(y)/len(y))  # Impulse factor
-            result[f"{series_name}_{stage_name}_peak_factor"] = (
-                max(y)-min(y))/(sum(y)/len(y))  # Peak factor
+        result["impluse_factor"] = max(y)/result["mean_abs"]
+        result["form_factor"] = result["rms"]/result["mean_abs"]
+        result["crest_factor"] = max(y)/result["rms"]
+        result["clearance_factor"] = max(
+            y)/(sum([abs(i)**0.5 for i in y])/len(y))**2
 
-        else:
-            result[f"{series_name}_{stage_name}_impluse_factor"] = max(y)
-            result[f"{series_name}_{stage_name}_peak_factor"] = max(y)-min(y)
-
-        # nan值置0
-        for k, v in result.items():
-            if np.isnan(v):
-                result[k] = 0
     else:
-        result[f"{series_name}_{stage_name}_time_span"] = 0  # 同上
-        result[f"{series_name}_{stage_name}_max"] = 0
-        result[f"{series_name}_{stage_name}_min"] = 0
-        result[f"{series_name}_{stage_name}_mean"] = 0
-        result[f"{series_name}_{stage_name}_median"] = 0
-        result[f"{series_name}_{stage_name}_std"] = 0
-        result[f"{series_name}_{stage_name}_kurtosis"] = 0
-        result[f"{series_name}_{stage_name}_rms"] = 0
+        result["time_span"] = -1
+        result["max"] = -1
+        result["min"] = -1
+        result["mean"] = -1
+        result["mean_abs"] = -1
+        result["median"] = -1
+        result["std"] = -1
+        result["rms"] = -1
+        result["peak_to_peak"] = -1
+        result["skewness"] = -1
+        result["kurtosis"] = -1
 
-        result[f"{series_name}_{stage_name}_impluse_factor"] = 0
-        result[f"{series_name}_{stage_name}_peak_factor"] = 0
+        result["impluse_factor"] = -1
+        result["form_factor"] = -1
+        result["crest_factor"] = -1
+        result["clearance_factor"] = -1
 
-    assert len(result) == 10  # 断言确保10个特征
+    # nan值置0
+    for k, v in result.items():
+        if np.isnan(v):
+            result[k] = 0
+
+    # 所有的key前面加上series_name和stage_name
+    result = OrderedDict(
+        [(f"{series_name}_{stage_name}_{k}", v) for k, v in result.items()])
+
+    assert len(result) == 15  # 断言确保15个特征
     return result
-
-
-def calc_features(sample, segmentations=None):
-    """
-    计算整个sample（4个曲线*3个stage）的特征
-    （stage时间跨度、最大值、最小值、平均值、中位数、Standard deviation、Peak factor、Fluctuation factor）*4个曲线*3个stage
-    """
-    if not segmentations:
-        segmentations = calc_segmentation_points(sample)
-    features = OrderedDict()
-    for name, series in sample.items():  # 遍历4个曲线
-        x, y = series
-        total_time_elipsed = x[-1]-x[0]  # 总用时
-        t = calc_features_single_series(x, y, segmentations, name)
-        features.update(t)  # 合并
-    features["total_time_elipsed"] = total_time_elipsed
-
-    assert len(features) == 1+10*3*4  # 断言确保特征数
-
-    for i in IGNORE_LIST:
-        features.pop(i)
-
-    return features
 
 
 def calc_features_single_series(x, y, segmentation_points, series_name):
@@ -147,44 +131,66 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
         stage3 = calc_features_per_stage(None, None, series_name, "stage3")
         features.update(stage3)
 
-    assert len(features) == 10*3
+    assert len(features) == 15*3
 
     return features
 
 
-def test(type=None):
-    if not type:
-        type = random.choice(SUPPORTED_SAMPLE_TYPES)
-    sample, _ = get_sample(type)
-    result = calc_features(sample)
-    # print(result)
-    return type, result
+def calc_features(sample, segmentations=None):
+    """
+    计算整个sample（4个曲线*3个stage）的特征
+    （stage时间跨度、最大值、最小值、平均值、中位数、Standard deviation、Peak factor、Fluctuation factor）*4个曲线*3个stage
+    """
+    if not segmentations:
+        segmentations = calc_segmentation_points(sample)
+    features = OrderedDict()
+    for name, series in sample.items():  # 遍历4个曲线
+        x, y = series
+        total_time_elipsed = x[-1]-x[0]  # 总用时
+        t = calc_features_single_series(x, y, segmentations, name)
+        features.update(t)  # 合并
+    features["total_time_elipsed"] = total_time_elipsed
+
+    assert len(features) == 1+15*3*4  # 断言确保特征数
+
+    for i in IGNORE_LIST:
+        features.pop(i)
+
+    return features
 
 
 if __name__ == "__main__":
 
+    """
+    sample, _ = get_sample("normal")
+    result = calc_features(sample)
+    print(result)
+    """
+
     results = {}
     for _ in range(30):
-        type, features = test()
-        for k, v in features.items():
-            if k not in results:
-                results[k] = [(v, type)]
-            else:
-                results[k].append((v, type))
-
+        for type in SUPPORTED_SAMPLE_TYPES:
+            sample, _ = get_sample(type)
+            features = calc_features(sample)
+            for k, v in features.items():
+                if k not in results:
+                    results[k] = [(v, type)]
+                else:
+                    results[k].append((v, type))
     print(results)
+
     for name in results:
         t = {}
         for type in SUPPORTED_SAMPLE_TYPES:
             t[type] = [i[0] for i in results[name] if i[1] == type]
         results[name] = t
-
     print(results)
+
     count = 1
     for k, v in results.items():
-        height, width = 9, 10
-        #height, width = 13, 10
-        #height, width = 10, 5
+        #height, width = 9, 5
+        height, width = 10, 9
+        #height, width = 15, 9
         if count > height*width:
             break
         plt.subplot(height, width, count)

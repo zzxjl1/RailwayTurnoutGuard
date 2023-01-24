@@ -28,9 +28,9 @@ DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
 EPOCHS = 100  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
+LEARNING_RATE = 1e-4  # 学习率
 
-INPUT_VECTOR_SIZE = 1 + 10 * 3 * 4 - len(IGNORE_LIST)  # 输入向量的大小
+INPUT_VECTOR_SIZE = 1 + 15 * 3 * 4 - len(IGNORE_LIST)  # 输入向量的大小
 TRANING_SET_LENGTH = 800  # 训练集长度
 TESTING_SET_LENGTH = 200  # 测试集长度
 DATASET_LENGTH = TRANING_SET_LENGTH + TESTING_SET_LENGTH
@@ -223,9 +223,9 @@ def test(type="normal"):
 
 if __name__ == '__main__':
 
-    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
-    test_cycles = 200  # 测试次数
+    test_cycles = 20  # 测试次数
     test_results = []
     for _ in range(test_cycles):
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测

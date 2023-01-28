@@ -1,12 +1,11 @@
 """pca lda demo"""
+import numpy as np
 from bp_classification import generate_dataset
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
-from sklearn.preprocessing import StandardScaler, MinMaxScaler
-from extract_features import calc_features
-from paper import get_paper_sample
-from sensor import SUPPORTED_SAMPLE_TYPES
+from sklearn.preprocessing import StandardScaler
+from gru_score import GRUScore
 
 SAMPLE_COUNT = 1000
 x, y = generate_dataset(SAMPLE_COUNT)
@@ -106,10 +105,10 @@ def lda_predict():
 
 
 if __name__ == "__main__":
-    pca_1()
-    pca_2()
+    # pca_1()
+    # pca_2()
     pca_3()
-    lda_2()
-    lda_3()
-    lda_predict()
+    # lda_2()
+    # lda_3()
+    # lda_predict()
     """由此可见，pca、lda效果都不好"""

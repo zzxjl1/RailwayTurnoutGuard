@@ -167,6 +167,35 @@ if __name__ == "__main__":
     print(result)
     """
 
+    """
+    # 特征选择,输出留下的特征名
+    from sklearn.feature_selection import SelectKBest
+    from sklearn.feature_selection import chi2
+    from sklearn.feature_selection import VarianceThreshold
+    from sklearn.feature_selection import mutual_info_classif
+    from sklearn.feature_selection import SelectFromModel
+    from sklearn.linear_model import LogisticRegression
+    from sklearn.preprocessing import MinMaxScaler
+    x, y = [], []
+    feature_names = []
+    for _ in range(100):
+        type = random.choice(SUPPORTED_SAMPLE_TYPES)
+        sample, _ = get_sample(type)
+        result = calc_features(sample)
+        feature_names = list(result.keys())
+        x.append(list(result.values()))
+        y.append(SUPPORTED_SAMPLE_TYPES.index(type))
+    selector = VarianceThreshold(threshold=0)
+    selector.fit_transform(x)
+
+    masks = selector.get_support()
+    # print(masks)
+    assert len(masks) == len(feature_names)
+    for mask, name in zip(masks, feature_names):
+        if not mask:
+            print(name)
+    """
+
     results = {}
     for _ in range(30):
         for type in SUPPORTED_SAMPLE_TYPES:
@@ -188,9 +217,9 @@ if __name__ == "__main__":
 
     count = 1
     for k, v in results.items():
-        #height, width = 9, 5
-        height, width = 10, 9
-        #height, width = 15, 9
+        # height, width = 9, 5
+        height, width = 5*1, 9
+        # height, width = 15, 9
         if count > height*width:
             break
         plt.subplot(height, width, count)

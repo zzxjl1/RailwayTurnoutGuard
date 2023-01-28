@@ -7,7 +7,8 @@ from extract_features import calc_features
 from gru_score import GRUScore
 
 results = {}
-for _ in range(3):
+#SUPPORTED_SAMPLE_TYPES = ["F1", "F3"]
+for _ in range(10):
     for type in SUPPORTED_SAMPLE_TYPES:
         sample, _ = get_sample(type)
         features = calc_features(sample)
@@ -31,7 +32,7 @@ print(results)
 data = np.random.lognormal(size=(37, 4), mean=1.5, sigma=1.75)
 
 # 只留下XX开头的特征
-results = {k: v for k, v in results.items() if k.startswith("A_stage2")}
+results = {k: v for k, v in results.items() if k.startswith("A_stage1")}
 # 去除xxx开头的特征
 results = {k: v for k, v in results.items() if not k.startswith("power")}
 print(len(results))

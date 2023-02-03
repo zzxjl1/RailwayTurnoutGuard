@@ -40,10 +40,23 @@ if MODEL_TO_USE == "BP":
 print("total input length:", TOTAL_LENGTH)
 
 
-BP_AE = nn.Sequential(
-    nn.Linear(TOTAL_LENGTH, round(TOTAL_LENGTH/5)),
-    nn.Linear(round(TOTAL_LENGTH/5), TOTAL_LENGTH),
-).to(DEVICE)  # 定义模型，很简单的AE,注意中间层的维度必须<<输入才有效
+class BP_AE(nn.Module):
+    def __init__(self, seq_len, latent_dim):
+        super(BP_AE, self).__init__()
+        self.bottle_neck_output = None
+
+        self.encoder = nn.Sequential(
+            nn.Linear(seq_len, latent_dim),
+        )
+        self.decoder = nn.Sequential(
+            nn.Linear(latent_dim, seq_len),
+        )
+
+    def forward(self, x):
+        x = self.encoder(x)
+        self.bottle_neck_output = x
+        x = self.decoder(x)
+        return x
 
 
 class EncoderRNN(nn.Module):
@@ -94,6 +107,7 @@ class DecoderRNN(nn.Module):
 class GRU_AE(nn.Module):
     def __init__(self, seq_len, n_features, latent_dim, hidden_size):
         super(GRU_AE, self).__init__()
+        self.bottle_neck_output = None
 
         self.seq_len = seq_len
         self.encoder = EncoderRNN(
@@ -103,14 +117,16 @@ class GRU_AE(nn.Module):
 
     def forward(self, x):
         x = self.encoder(x)
+        self.bottle_neck_output = x
         x = self.decoder(x)
         return x
 
 
-models = {"BP": BP_AE, "GRU": GRU_AE(seq_len=TOTAL_LENGTH,
-                                     n_features=CHANNELS,
-                                     latent_dim=round(TOTAL_LENGTH/5),
-                                     hidden_size=round(TOTAL_LENGTH/5)).to(DEVICE)}
+models = {"BP": BP_AE(seq_len=TOTAL_LENGTH, latent_dim=round(TOTAL_LENGTH/5)),
+          "GRU": GRU_AE(seq_len=TOTAL_LENGTH,
+                        n_features=CHANNELS,
+                        latent_dim=round(TOTAL_LENGTH/5),
+                        hidden_size=round(TOTAL_LENGTH/5)).to(DEVICE)}
 
 model = models[MODEL_TO_USE]
 print(model)
@@ -299,6 +315,26 @@ def sigmoid(x):
 
 if __name__ == "__main__":
 
+    """
+    z_s, labels = [], []
+    for _ in range(50):
+        for type in SUPPORTED_SAMPLE_TYPES:
+            sample, _ = get_sample(type)
+            x = model_input_parse(sample)
+            model(x)
+            t = model.bottle_neck_output.squeeze().detach().numpy()
+            z_s.append(list(t))
+            labels.append(type)
+    from sklearn.decomposition import PCA
+    pca = PCA(n_components=2)
+    newX = pca.fit_transform(z_s)
+    for z, label in zip(newX, labels):
+        plt.scatter(*z, label=labels)
+    plt.title("pca_2dim of bottle_neck_output")
+    plt.show()
+    """
+    # assert 0 # debug only
+
     def get_result_matrix(show_plt):
         d2_confidences = []  # 二维confidence矩阵
         for type in SUPPORTED_SAMPLE_TYPES:
@@ -308,11 +344,11 @@ if __name__ == "__main__":
         d2_confidences = preprocessing.MinMaxScaler().fit_transform(d2_confidences)  # 归一化
         return d2_confidences
 
-    train_all()
+    # train_all()
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))
-    test_cycles = 1
+    test_cycles = 10
     for i in range(test_cycles):
         matrix += np.array(get_result_matrix(test_cycles == 1))
     matrix = matrix / test_cycles

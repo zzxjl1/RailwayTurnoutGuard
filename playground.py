@@ -1,4 +1,5 @@
 """pca lda demo"""
+from sklearn.manifold import TSNE
 import numpy as np
 from bp_classification import generate_dataset
 from sklearn.decomposition import PCA
@@ -6,6 +7,7 @@ import matplotlib.pyplot as plt
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis
 from sklearn.preprocessing import StandardScaler
 from gru_score import GRUScore
+from sensor import SUPPORTED_SAMPLE_TYPES
 
 SAMPLE_COUNT = 1000
 x, y = generate_dataset(SAMPLE_COUNT)
@@ -54,7 +56,7 @@ def pca_3():
     # 画图
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    ax.scatter(newX[:, 0], newX[:, 1], newX[:, 2], c=y)
+    ax.scatter(newX[:, 0], newX[:, 1], newX[:, 2], c=y, cmap=plt.cm.rainbow)
     plt.title("pca_3")
     plt.show()
 
@@ -104,11 +106,50 @@ def lda_predict():
     """
 
 
+def tsne_2():
+    """TSNE降维到2维"""
+    global x, y
+    tsne = TSNE(n_components=2)
+    newX = tsne.fit_transform(x)
+    print(newX)
+
+    # 画图
+    plt.scatter(newX[:, 0], newX[:, 1], c=y)
+    plt.title("tsne_2")
+    plt.show()
+
+
+# 12种颜色
+colors = ["teal", "purple", "royalblue", "gold", "black", "orange",
+          "red", "pink", "dodgerblue", "slategray", "gray", "green"]
+
+
+def tsne_3():
+    """TSNE降维到3维"""
+    global x, y
+    tsne = TSNE(n_components=3)
+    newX = tsne.fit_transform(x)
+    print(newX)
+
+    # 画图
+    fig = plt.figure()
+    ax = fig.add_subplot(111, projection='3d')
+    ax.scatter(newX[:, 0], newX[:, 1], newX[:, 2], c=y)
+    # add legend for each color
+    for i in range(len(colors)):
+        ax.scatter([], [], c=colors[i], label=SUPPORTED_SAMPLE_TYPES[i])
+    plt.title("tsne_3")
+    plt.legend(loc="upper right")
+    plt.show()
+
+
 if __name__ == "__main__":
     # pca_1()
     # pca_2()
-    pca_3()
+    # pca_3()
     # lda_2()
     # lda_3()
     # lda_predict()
+    # tsne_2()
+    tsne_3()
     """由此可见，pca、lda效果都不好"""

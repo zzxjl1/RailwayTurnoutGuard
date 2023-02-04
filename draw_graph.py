@@ -224,6 +224,49 @@ def graph_2():
     plt.show()
 
 
+def graph_3():
+    def do(sample_type, ae_type):
+        FILE_PATH = './models/auto_encoder/'  # 模型保存路径
+        DEVICE = torch.device('cpu')
+        CHANNELS = 3
+
+        sample, _ = get_sample(sample_type)
+        x = model_input_parse(sample)
+        model_path = f"{FILE_PATH}{ae_type}.pth"
+        model = torch.load(model_path, map_location=DEVICE).to(DEVICE)
+        result = model(x)
+        loss = torch.mean(torch.abs(result - x))
+
+        before = x.view(CHANNELS, -1).detach().numpy()
+        after = result.view(CHANNELS, -1).detach().numpy()
+
+        return before[0], after[0], loss
+
+    height, width = 1, 2
+    figure, (axes) = plt.subplots(height, width, figsize=(12, 5), dpi=150)
+
+    ax = axes[0]
+    sample_type, ae_type = "F5", "F5"
+    before, after, loss = do(sample_type, ae_type)
+    ax.plot(before, label="Original")
+    ax.plot(after, label="Auto-Encoder output")
+    ax.legend(loc="upper right")
+    ax.set_title(
+        f"Sample type: {sample_type} - AE type: {ae_type} - Loss: {loss:.2f}")
+
+    ax = axes[1]
+    sample_type, ae_type = "normal", "F3"
+    before, after, loss = do(sample_type, ae_type)
+    ax.plot(before, label="Original")
+    ax.plot(after, label="Auto-Encoder output")
+    ax.legend(loc="upper right")
+    ax.set_title(
+        f"Sample type: {sample_type} - AE type: {ae_type} - Loss: {loss:.2f}")
+
+    plt.show()
+
+
 if __name__ == "__main__":
     # graph_1()
-    graph_2()
+    # graph_2()
+    graph_3()

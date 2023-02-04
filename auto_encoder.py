@@ -230,9 +230,7 @@ def predict_raw_input(x):
             losses[type] = loss.item()
     losses = list(losses.values())
     # 使用sigmoid函数将loss转换为概率
-    losses = [sigmoid(loss) for loss in losses]
-    # 翻转loss，使得loss越小，实际越大
-    confidences = [max(losses)-loss for loss in losses]
+    confidences = [sigmoid_d(loss*1000) for loss in losses]
     # 放缩到0-1之间
     confidences = [(confidence - min(confidences)) / (max(confidences) - min(confidences))
                    for confidence in confidences]
@@ -309,8 +307,8 @@ def test(type="normal", show_plt=False):
     return confidences
 
 
-def sigmoid(x):
-    return 1 / (1 + np.exp(-x))
+def sigmoid_d(x):
+    return np.exp(-x) / (1 + np.exp(-x))**2
 
 
 if __name__ == "__main__":
@@ -344,7 +342,7 @@ if __name__ == "__main__":
         d2_confidences = preprocessing.MinMaxScaler().fit_transform(d2_confidences)  # 归一化
         return d2_confidences
 
-    # train_all()
+    train_all()
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))

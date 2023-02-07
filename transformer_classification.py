@@ -30,7 +30,7 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available()
                       and not FORCE_CPU else 'cpu')
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
-SERIES_TO_ENCODE = ["A", "B", "C", "power"]
+SERIES_TO_ENCODE = ["A", "B", "C"]
 CHANNELS = len(SERIES_TO_ENCODE)
 TIME_SERIES_DURATION = 20  # 20s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
@@ -38,8 +38,8 @@ POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于�
 SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
 
 STAGE_1_DURATION = 2
-STAGE_2_DURATION = 20
-STAGE_3_DURATION = 10
+STAGE_2_DURATION = 10
+STAGE_3_DURATION = 5
 
 
 def time_to_index(sec):
@@ -51,7 +51,7 @@ class TransformerLayer(nn.Module):
         super(TransformerLayer, self).__init__()
         self.input_vector_size = input_vector_size
         self.transformer = nn.TransformerEncoderLayer(input_vector_size,
-                                                      nhead=1,
+                                                      nhead=CHANNELS,
                                                       dim_feedforward=512,
                                                       dropout=dropout_rate,
                                                       batch_first=True,
@@ -113,8 +113,8 @@ class TransformerClassification(nn.Module):
 
         input_length = time_to_index(STAGE_1_DURATION) + time_to_index(
             STAGE_2_DURATION) + time_to_index(STAGE_3_DURATION)
-        self.fc1 = nn.Linear(input_length, output_vector_size*2)
-        self.out = nn.Linear(output_vector_size*2, output_vector_size)
+        self.fc1 = nn.Linear(input_length, output_vector_size*5)
+        self.out = nn.Linear(output_vector_size*5, output_vector_size)
 
     def forward(self, stage_1, stage_2, stage_3):
         stage_1 = stage_1.to(DEVICE)
@@ -172,16 +172,20 @@ def model_input_parse(sample, segmentations=None, batch_simulation=True):
         threshhold = time_to_index(sec)
         # 超长序列截断,超短序列补0
         if t.shape[0] > threshhold:
+            seg_index = threshhold
             t = t[: threshhold, :]
         else:
+            seg_index = t.shape[0]
             t = np.pad(t, ((0,  threshhold - t.shape[0]), (0, 0)), 'constant')
         assert t.shape[0] == threshhold
         assert t.shape[1] == CHANNELS
-        return t
+        return t, seg_index
 
-    stage_1 = parse(stage_1, STAGE_1_DURATION)
-    stage_2 = parse(stage_2, STAGE_2_DURATION)
-    stage_3 = parse(stage_3, STAGE_3_DURATION)
+    stage_1, seg_index_1 = parse(stage_1, STAGE_1_DURATION)
+    stage_2, seg_index_2 = parse(stage_2, STAGE_2_DURATION)
+    seg_index_2 += len(stage_1)
+    stage_3, seg_index_3 = parse(stage_3, STAGE_3_DURATION)
+    seg_index_3 += len(stage_1) + len(stage_2)
 
     if batch_simulation:
         stage_1 = stage_1[np.newaxis, :, :]
@@ -189,7 +193,12 @@ def model_input_parse(sample, segmentations=None, batch_simulation=True):
         stage_3 = stage_3[np.newaxis, :, :]
 
     #print(stage_1.shape, stage_2.shape, stage_3.shape)
-    return stage_1, stage_2, stage_3
+    return stage_1, stage_2, stage_3, [
+        (0, seg_index_1),
+        (time_to_index(STAGE_1_DURATION), seg_index_2),
+        (time_to_index(STAGE_1_DURATION+STAGE_2_DURATION),
+         seg_index_3)
+    ]
 
 
 class Dataset(Dataset):
@@ -207,7 +216,7 @@ class Dataset(Dataset):
                     self.stages_2) == len(self.stages_3) == len(self.y)
                 sample_type = random.choice(SUPPORTED_SAMPLE_TYPES)
                 sample, segmentations = get_sample(sample_type)  # 生成样本
-                stage_1, stage_2, stage_3 = model_input_parse(
+                stage_1, stage_2, stage_3, seg_index = model_input_parse(
                     sample,
                     segmentations,
                     batch_simulation=False
@@ -251,7 +260,7 @@ def train():
     torch.save(model, FILE_PATH)  # 保存模型
 
 
-def predict_raw_input(stage_1, stage_2, stage_3, show_plt=False):
+def predict_raw_input(stage_1, stage_2, stage_3, seg_index, show_plt=False):
     class attentionVisualization:
         def __init__(self):
             self.clear()
@@ -280,23 +289,31 @@ def predict_raw_input(stage_1, stage_2, stage_3, show_plt=False):
             self.borders = []
 
         def show(self):
-            fig, _ = plt.subplots(4, 1, figsize=(8, 5), dpi=150)
+            height, width = CHANNELS, 1
+            fig, _ = plt.subplots(height, width, figsize=(8, 5), dpi=150)
             fig.subplots_adjust(hspace=0.4)
+
+            def parse(x):
+                result = []
+                x = list(x)
+                print(seg_index)
+                for a, b in seg_index:
+                    result += x[a:b]
+                return np.array(result)
+
             for i in range(CHANNELS):
-                ax1 = plt.subplot(4, 1, i+1)
+                ax1 = plt.subplot(height, width, i+1)
                 ax1.set_title("Channel {}".format(SERIES_TO_ENCODE[i]))
                 ax1.set_xticks([])
                 ax2 = ax1.twinx()
                 ax2.yaxis.tick_left()  # 将y轴的刻度线移到左边
-                ax2.plot(self.input[:, i], '#FC5A50', label='TimeSeries Input')
+                ax2.plot(parse(self.input[:, i]),
+                         '#FC5A50', label='TimeSeries Input')
                 # ax2.plot(self.attention_weights[:, i],
                 #         'r', label='Attention Level')
-                ax1.pcolormesh(self.attention_weights[:, i].reshape(
+                ax1.pcolormesh(parse(self.attention_weights[:, i]).reshape(
                     1, -1), cmap="Greens_r", alpha=0.7)
                 ax1.set_yticks([])
-                # 画竖线
-                for border in self.borders:
-                    ax1.axvline(x=border, color='k', linestyle='--')
             lines, labels = ax2.get_legend_handles_labels()
             heatmap_patch = patches.Rectangle(
                 (0, 0), 1, 1, fc="g", alpha=0.7)
@@ -327,12 +344,12 @@ def predict_raw_input(stage_1, stage_2, stage_3, show_plt=False):
 
 
 def predict(sample, segmentations=None, show_plt=False):
-    stage_1, stage_2, stage_3 = model_input_parse(
+    stage_1, stage_2, stage_3, seg_index = model_input_parse(
         sample,
         segmentations,
         batch_simulation=True
     )  # 转换为模型输入格式
-    output = predict_raw_input(stage_1, stage_2, stage_3, show_plt)
+    output = predict_raw_input(stage_1, stage_2, stage_3, seg_index, show_plt)
     return output.squeeze()
 
 

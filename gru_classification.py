@@ -1,7 +1,6 @@
 import os
 import random
 from alive_progress import alive_bar
-from matplotlib import patches, pyplot as plt
 import numpy as np
 import torch
 import torch.nn as nn
@@ -18,7 +17,7 @@ from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILE_PATH = "./models/gru_classification.pth"
 DATASET_LENGTH = 500  # 数据集总长度
-EPOCHS = 100  # 训练数据集的轮次
+EPOCHS = 1000  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
@@ -85,8 +84,8 @@ class FCN_1D(nn.Module):
                                padding_mode='replicate'
                                )
         torch.nn.init.xavier_uniform_(self.conv1.weight)
-        self.bn1 = nn.BatchNorm1d(128, eps=1e-03, momentum=0.99)
-        self.SE1 = Squeeze_Excite(128)
+        self.bn1 = nn.BatchNorm1d(out_channels, eps=1e-03, momentum=0.99)
+        self.SE1 = Squeeze_Excite(out_channels)
 
         self.conv2 = nn.Conv1d(in_channels=out_channels,
                                out_channels=out_channels*2,
@@ -95,8 +94,8 @@ class FCN_1D(nn.Module):
                                padding_mode='replicate'
                                )
         torch.nn.init.xavier_uniform_(self.conv2.weight)
-        self.bn2 = nn.BatchNorm1d(256, eps=1e-03, momentum=0.99)
-        self.SE2 = Squeeze_Excite(256)
+        self.bn2 = nn.BatchNorm1d(out_channels*2, eps=1e-03, momentum=0.99)
+        self.SE2 = Squeeze_Excite(out_channels*2)
 
         self.conv3 = nn.Conv1d(in_channels=out_channels*2,
                                out_channels=out_channels,
@@ -105,7 +104,7 @@ class FCN_1D(nn.Module):
                                padding_mode='replicate'
                                )
         torch.nn.init.xavier_uniform_(self.conv3.weight)
-        self.bn3 = nn.BatchNorm1d(128, eps=1e-03, momentum=0.99)
+        self.bn3 = nn.BatchNorm1d(out_channels, eps=1e-03, momentum=0.99)
         self.gap = nn.AdaptiveAvgPool1d(1)
 
     def forward(self, seq):
@@ -131,38 +130,39 @@ class FCN_1D(nn.Module):
 
 
 class GRU_FCN(nn.Module):
-    def __init__(self, GRU, FCN,  seq_len, n_class, dropout_rate, concat_features):
+    def __init__(self,  seq_len, n_class, dropout_rate, hidden_size):
         super().__init__()
-        self.GRU = GRU
-        self.FCN = FCN
+        self.GRU_model = Vanilla_GRU(input_size=CHANNELS,
+                                     hidden_size=hidden_size,
+                                     num_layers=1).to(DEVICE)
+        self.FCN_model = FCN_1D(in_channels=CHANNELS,
+                                out_channels=hidden_size).to(DEVICE)
         self.seq_len = seq_len
 
         self.dropout = nn.Dropout(p=dropout_rate)
         self.Dense = nn.Linear(
-            in_features=concat_features, out_features=n_class)
+            in_features=hidden_size*2, out_features=n_class)
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, seq):
-        y_GRU, _ = self.GRU(seq)
+        y_GRU, _ = self.GRU_model(seq)
         y_GRU = y_GRU.transpose(0, 1)[-1]
         y_GRU = self.dropout(y_GRU)
-        y_FCN = self.FCN(seq).squeeze()
+        y_FCN = self.FCN_model(seq).squeeze()
         if len(y_FCN.size()) == 1:
             y_FCN = y_FCN.unsqueeze(0)
         concat = torch.cat([y_GRU, y_FCN], 1)
         y = self.Dense(concat)
+        y = self.softmax(y)
         return y
 
 
-GRU_model = Vanilla_GRU(input_size=CHANNELS,
-                        hidden_size=128,
-                        num_layers=1).to(DEVICE)
-FCN_model = FCN_1D(in_channels=CHANNELS, out_channels=128).to(DEVICE)
-model = GRU_FCN(GRU=GRU_model,
-                FCN=FCN_model,
-                seq_len=SEQ_LENGTH,
-                n_class=N_CLASSES,
-                dropout_rate=0.2,
-                concat_features=128+128).to(DEVICE)
+model = GRU_FCN(
+    seq_len=SEQ_LENGTH,
+    n_class=N_CLASSES,
+    dropout_rate=0.2,
+    hidden_size=128
+).to(DEVICE)
 
 loss = nn.CrossEntropyLoss()
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)
@@ -261,11 +261,11 @@ def predict(sample, segmentations=None):
     return output.squeeze()
 
 
-def test(type=None, show_plt=False):
+def test(type=None):
     if type is None:
         type = random.choice(SUPPORTED_SAMPLE_TYPES)
     sample, segmentations = get_sample(type)  # 生成样本
-    output = predict(sample, segmentations, show_plt)
+    output = predict(sample, segmentations)
     result_pretty = parse_predict_result(output)  # 解析结果
     print(result_pretty)
     label = get_label_from_result_pretty(result_pretty)  # 获取结果
@@ -274,10 +274,10 @@ def test(type=None, show_plt=False):
 
 
 if __name__ == "__main__":
-    train()
+    # train()
 
     # test(type="H5")
 
-    test_cycle = 200
+    test_cycle = 100
     accuracy = sum([test() for _ in range(test_cycle)])/test_cycle
     print("accuracy: {}".format(accuracy))

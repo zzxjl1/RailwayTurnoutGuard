@@ -223,9 +223,9 @@ def test(type="normal"):
 
 if __name__ == '__main__':
 
-    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
-    test_cycles = 20  # 测试次数
+    test_cycles = 100  # 测试次数
     test_results = []
     for _ in range(test_cycles):
         t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测

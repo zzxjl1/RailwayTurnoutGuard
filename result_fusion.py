@@ -18,11 +18,12 @@ from segmentation import calc_segmentation_points
 from sensor.config import SUPPORTED_SAMPLE_TYPES
 from sensor.simulate import generate_sample
 from tool_utils import get_label_from_result_pretty, parse_predict_result
-import transformer_classification
 import auto_encoder
 import bp_classification
-from transformer_classification import TransformerClassification, TransformerLayer
+import gru_classification
+from gru_classification import GRU_FCN, Vanilla_GRU, FCN_1D, Squeeze_Excite
 from bp_classification import BP_Net
+from auto_encoder import BP_AE, EncoderRNN, DecoderRNN, GRU_AE
 from sensor.dataset import get_sample
 from alive_progress import alive_it
 
@@ -33,7 +34,7 @@ FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
                       else 'cpu')
 print('Using device:', DEVICE)
-EPOCHS = 300  # 训练数据集的轮次
+EPOCHS = 500  # 训练数据集的轮次
 LEARNING_RATE = 1e-3  # 学习率
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)
 INPUT_VECTOR_SIZE = 3 * N_CLASSES  # 输入向量大小
@@ -138,17 +139,17 @@ def model_input_parse(sample, segmentations, batch_simulation=True):
     if segmentations is None:
         segmentations = calc_segmentation_points(sample)
     bp_result = bp_classification.predict(sample, segmentations)
-    transformer_result = transformer_classification.predict(
+    gru_result = gru_classification.predict(
         sample, segmentations)
     _, ae_result = auto_encoder.predict(sample)
     ae_result = torch.tensor(list(ae_result.values()),
                              dtype=torch.float).to(DEVICE)
 
     print("bp_result:", bp_result)
-    print("transformer_result:", transformer_result)
+    print("gru_result:", gru_result)
     print("ae_result:", ae_result)
     # 拼接三个分类器的结果
-    result = torch.cat([bp_result, transformer_result, ae_result], dim=0)
+    result = torch.cat([bp_result, gru_result, ae_result], dim=0)
     if batch_simulation:
         result = result.unsqueeze(0)
     print(result.shape)

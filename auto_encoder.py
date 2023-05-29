@@ -230,26 +230,21 @@ def predict_raw_input(x):
             losses[type] = loss.item()
     losses = list(losses.values())
     # 使用sigmoid函数将loss转换为概率
-    confidences = [sigmoid_d(loss*1000) for loss in losses]
-    # 放缩到0-1之间
-    confidences = [(confidence - min(confidences)) / (max(confidences) - min(confidences))
-                   for confidence in confidences]
+    confidences = [-loss * 100 for loss in losses]
+    # 和为1
+    confidences = softmax(confidences)
+    confidences = [round(confidence, 2) for confidence in confidences]
     # key还原上
     confidences = dict(zip(SUPPORTED_SAMPLE_TYPES, confidences))
-    return results, confidences
+    return results, losses, confidences
 
 
-def visualize_prediction_result(y_before, results, confidences):
+def visualize_prediction_result(y_before, results, losses):
     for ae_type in SUPPORTED_SAMPLE_TYPES:
-        loss = confidences[ae_type]
+        loss = losses[ae_type]
         y_after = results[ae_type]
         draw(y_before, y_after,
-             f"AutoEncoder type: {ae_type} - Confidence: {loss}")
-
-    plt.bar(range(len(confidences)), confidences.values(),
-            tick_label=list(confidences.keys()))
-    plt.title(f"AutoEncoder Confidence Result")
-    plt.show()
+             f"AutoEncoder type: {ae_type} - Loss: {loss}")
 
 
 def model_input_parse(sample):
@@ -293,9 +288,9 @@ def draw(y_before, y_after, title=""):
 
 def predict(sample, show_plt=False):
     x = model_input_parse(sample)
-    results, confidences = predict_raw_input(x)
+    results,losses, confidences = predict_raw_input(x)
     if show_plt:
-        visualize_prediction_result(x, results, confidences)
+        visualize_prediction_result(x, results, losses)
     return results, confidences
 
 
@@ -304,11 +299,16 @@ def test(type="normal", show_plt=False):
     sample, _ = get_sample(type)
     print(f"sample type: {type}")
     results, confidences = predict(sample, show_plt)
+    print(f"confidences: {confidences}")
     return confidences
 
 
+def softmax(x):
+    return np.exp(x) / np.sum(np.exp(x), axis=0)
+
+
 def sigmoid_d(x):
-    return np.exp(-x) / (1 + np.exp(-x))**2
+    return np.exp(-x) / (1 + np.exp(-x)) ** 2
 
 
 if __name__ == "__main__":
@@ -342,7 +342,7 @@ if __name__ == "__main__":
         d2_confidences = preprocessing.MinMaxScaler().fit_transform(d2_confidences)  # 归一化
         return d2_confidences
 
-    train_all()
+    #train_all()
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
                       len(SUPPORTED_SAMPLE_TYPES)))

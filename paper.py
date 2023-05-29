@@ -1,7 +1,7 @@
 
 import pandas as pd
 from sensor import interpolate, generate_power_series, show_sample
-from bp_classification import get_label_from_result_pretty, predict
+from mlp_classification import get_label_from_result_pretty, predict
 from tool_utils import parse_predict_result
 
 

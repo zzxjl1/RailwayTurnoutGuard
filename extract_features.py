@@ -11,7 +11,7 @@ import matplotlib.pyplot as plt
 from gru_score import GRUScore
 
 IGNORE_LIST = []
-
+SERIES_TO_ENCODE = ["A", "B", "C"]
 
 def calc_features_per_stage(x, y, series_name, stage_name):
     """计算单个stage的特征"""
@@ -138,20 +138,22 @@ def calc_features_single_series(x, y, segmentation_points, series_name):
 
 def calc_features(sample, segmentations=None):
     """
-    计算整个sample（4个曲线*3个stage）的特征
+    计算整个sample（3个曲线*3个stage）的特征
     （stage时间跨度、最大值、最小值、平均值、中位数、Standard deviation、Peak factor、Fluctuation factor）*4个曲线*3个stage
     """
     if not segmentations:
         segmentations = calc_segmentation_points(sample)
     features = OrderedDict()
-    for name, series in sample.items():  # 遍历4个曲线
+    for name, series in sample.items():  # 遍历3个曲线
+        if name not in SERIES_TO_ENCODE:
+            continue
         x, y = series
         total_time_elipsed = x[-1]-x[0]  # 总用时
         t = calc_features_single_series(x, y, segmentations, name)
         features.update(t)  # 合并
     features["total_time_elipsed"] = total_time_elipsed
 
-    assert len(features) == 1+15*3*4  # 断言确保特征数
+    assert len(features) == 1+15*len(SERIES_TO_ENCODE)*3  # 断言确保特征数
 
     for i in IGNORE_LIST:
         features.pop(i)

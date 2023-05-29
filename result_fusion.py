@@ -19,10 +19,10 @@ from sensor.config import SUPPORTED_SAMPLE_TYPES
 from sensor.simulate import generate_sample
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 import auto_encoder
-import bp_classification
+import mlp_classification
 import gru_classification
 from gru_classification import GRU_FCN, Vanilla_GRU, FCN_1D, Squeeze_Excite
-from bp_classification import BP_Net
+from mlp_classification import MLP
 from auto_encoder import BP_AE, EncoderRNN, DecoderRNN, GRU_AE
 from sensor.dataset import get_sample
 from alive_progress import alive_it
@@ -138,7 +138,7 @@ loss_func = nn.CrossEntropyLoss()
 def model_input_parse(sample, segmentations, batch_simulation=True):
     if segmentations is None:
         segmentations = calc_segmentation_points(sample)
-    bp_result = bp_classification.predict(sample, segmentations)
+    bp_result = mlp_classification.predict(sample, segmentations)
     gru_result = gru_classification.predict(
         sample, segmentations)
     _, ae_result = auto_encoder.predict(sample)
@@ -224,7 +224,7 @@ def test(type=None):
 
 if __name__ == '__main__':
 
-    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
     test_cycles = 200  # 测试次数
     test_results = []

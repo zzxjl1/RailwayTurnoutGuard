@@ -1,7 +1,7 @@
 """pca lda demo"""
 from sklearn.manifold import TSNE
 import numpy as np
-from bp_classification import generate_dataset
+from mlp_classification import generate_dataset
 from sklearn.decomposition import PCA
 import matplotlib.pyplot as plt
 from sklearn.discriminant_analysis import LinearDiscriminantAnalysis

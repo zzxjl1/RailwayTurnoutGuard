@@ -12,27 +12,32 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader, TensorDataset
-from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
-from sensor.dataset import generate_dataset, get_sample, parse_sample
+from sensor import (
+    SAMPLE_RATE,
+    SUPPORTED_SAMPLE_TYPES,
+    generate_dataset,
+    get_sample,
+    parse_sample,
+)
+from gru_score import GRUScore
 
-POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的采样点数
+POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的降采样因子
 TIME_SERIES_DURATION = 10  # 输入模型的时间序列时长为10s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 时间序列长度
-TRAINING_SET_LENGTH = 200  # 训练集长度
-TESTING_SET_LENGTH = 50  # 测试集长度
+TRAINING_SET_LENGTH = 35  # 训练集长度
+TESTING_SET_LENGTH = 5  # 测试集长度
 SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂时不用
 CHANNELS = len(SERIES_TO_ENCODE)
-TOTAL_LENGTH = TIME_SERIES_LENGTH//POOLING_FACTOR_PER_TIME_SERIES
+TOTAL_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES
 
 MODEL_TO_USE = "BP"
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
 EPOCHS = 500  # 训练轮数
-FILE_PATH = './models/auto_encoder/'  # 模型保存路径
+FILE_PATH = "./models/auto_encoder/"  # 模型保存路径
 FORCE_CPU = True  # 强制使用CPU
-DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
-                      else 'cpu')
-print('Using device:', DEVICE)
+DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
+print("Using device:", DEVICE)
 
 
 if MODEL_TO_USE == "BP":
@@ -60,17 +65,20 @@ class BP_AE(nn.Module):
 
 
 class EncoderRNN(nn.Module):
-
     def __init__(self, n_features, latent_dim, hidden_size):
         super(EncoderRNN, self).__init__()
 
-        self.gru_enc = nn.GRU(n_features, hidden_size,
-                              batch_first=True, dropout=0,
-                              bidirectional=True)
+        self.gru_enc = nn.GRU(
+            n_features, hidden_size, batch_first=True, dropout=0, bidirectional=True
+        )
 
-        self.lat_layer = nn.GRU(hidden_size*2, latent_dim,
-                                batch_first=True, dropout=0,
-                                bidirectional=False)
+        self.lat_layer = nn.GRU(
+            hidden_size * 2,
+            latent_dim,
+            batch_first=True,
+            dropout=0,
+            bidirectional=False,
+        )
 
     def forward(self, x):
         x, _ = self.gru_enc(x)
@@ -85,16 +93,15 @@ class DecoderRNN(nn.Module):
         self.seq_len = seq_len
         self.hidden_size = hidden_size
 
-        self.gru_dec1 = nn.GRU(latent_dim, latent_dim,
-                               batch_first=True, dropout=0,
-                               bidirectional=False)
+        self.gru_dec1 = nn.GRU(
+            latent_dim, latent_dim, batch_first=True, dropout=0, bidirectional=False
+        )
 
-        self.gru_dec2 = nn.GRU(latent_dim, hidden_size,
-                               batch_first=True, dropout=0,
-                               bidirectional=True)
+        self.gru_dec2 = nn.GRU(
+            latent_dim, hidden_size, batch_first=True, dropout=0, bidirectional=True
+        )
 
-        self.output_layer = nn.Linear(
-            self.hidden_size*2, n_features, bias=True)
+        self.output_layer = nn.Linear(self.hidden_size * 2, n_features, bias=True)
         self.act = nn.ReLU()
 
     def forward(self, x):
@@ -110,10 +117,10 @@ class GRU_AE(nn.Module):
         self.bottle_neck_output = None
 
         self.seq_len = seq_len
-        self.encoder = EncoderRNN(
-            n_features, latent_dim, hidden_size).to(DEVICE)
-        self.decoder = DecoderRNN(
-            seq_len, n_features, latent_dim, hidden_size).to(DEVICE)
+        self.encoder = EncoderRNN(n_features, latent_dim, hidden_size).to(DEVICE)
+        self.decoder = DecoderRNN(seq_len, n_features, latent_dim, hidden_size).to(
+            DEVICE
+        )
 
     def forward(self, x):
         x = self.encoder(x)
@@ -122,11 +129,15 @@ class GRU_AE(nn.Module):
         return x
 
 
-models = {"BP": BP_AE(seq_len=TOTAL_LENGTH, latent_dim=round(TOTAL_LENGTH/5)),
-          "GRU": GRU_AE(seq_len=TOTAL_LENGTH,
-                        n_features=CHANNELS,
-                        latent_dim=round(TOTAL_LENGTH/5),
-                        hidden_size=round(TOTAL_LENGTH/5)).to(DEVICE)}
+models = {
+    "BP": BP_AE(seq_len=TOTAL_LENGTH, latent_dim=round(TOTAL_LENGTH / 5)),
+    "GRU": GRU_AE(
+        seq_len=TOTAL_LENGTH,
+        n_features=CHANNELS,
+        latent_dim=round(TOTAL_LENGTH / 5),
+        hidden_size=round(TOTAL_LENGTH / 5),
+    ).to(DEVICE),
+}
 
 model = models[MODEL_TO_USE]
 print(model)
@@ -143,19 +154,23 @@ optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # 优化器
 
 
 def get_dataloader(type):
-    temp, _, _ = generate_dataset(dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
-                                  time_series_length=TIME_SERIES_LENGTH,
-                                  sample_type=type,
-                                  pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                                  series_to_encode=SERIES_TO_ENCODE)
-    DATASET = torch.tensor(temp, dtype=torch.float,
-                           requires_grad=True).to(DEVICE)  # 转换为tensor
+    temp, _, _ = generate_dataset(
+        dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
+        time_series_length=TIME_SERIES_LENGTH,
+        sample_type=type,
+        pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+        series_to_encode=SERIES_TO_ENCODE,
+    )
+    DATASET = torch.tensor(temp, dtype=torch.float, requires_grad=True).to(
+        DEVICE
+    )  # 转换为tensor
     if MODEL_TO_USE == "BP":
         # 通道合并
         DATASET = DATASET.view(-1, TOTAL_LENGTH)
     elif MODEL_TO_USE == "GRU":
         DATASET = DATASET.transpose(2, 1)
     print("dataset shape:", DATASET.shape)
+    assert DATASET.shape[0] == TRAINING_SET_LENGTH + TESTING_SET_LENGTH
     train_ds = TensorDataset(DATASET[:TRAINING_SET_LENGTH])
     test_ds = TensorDataset(DATASET[TRAINING_SET_LENGTH:])
 
@@ -164,7 +179,7 @@ def get_dataloader(type):
     return train_dl, test_dl
 
 
-NOISE_AMPLITUDE = 0.25
+NOISE_AMPLITUDE = 0.1
 
 
 def loss_batch(model, x, is_train):
@@ -173,7 +188,7 @@ def loss_batch(model, x, is_train):
         result = model(y)  # 将加了噪声的数据输入模型
     else:
         result = model(x)
-    #print(result.shape, x.shape)
+    # print(result.shape, x.shape)
     loss = loss_func(result, x)  # 目标值为没加噪声的x
     loss.requires_grad_(True)
     loss.backward()
@@ -194,10 +209,14 @@ def train(type="normal"):
         model.eval()
         with torch.no_grad():
             losses, nums = zip(
-                *[loss_batch(model, x, is_train=False) for (x,) in test_dl])
+                *[loss_batch(model, x, is_train=False) for (x,) in test_dl]
+            )
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
-        print('Epoch [{}/{}], Validation_Loss: {}, Type: {}'
-              .format(epoch + 1, EPOCHS, val_loss, type))
+        print(
+            "Epoch [{}/{}], Validation_Loss: {}, Type: {}".format(
+                epoch + 1, EPOCHS, val_loss, type
+            )
+        )
 
     torch.save(model, f"{FILE_PATH}{type}.pth")  # 保存模型
 
@@ -219,8 +238,7 @@ def predict_raw_input(x):
     losses = {}
     for type in SUPPORTED_SAMPLE_TYPES:
         model_path = f"{FILE_PATH}{type}.pth"
-        assert os.path.exists(
-            model_path), f"model {type} not found, please train first"
+        assert os.path.exists(model_path), f"model {type} not found, please train first"
         model = torch.load(model_path, map_location=DEVICE).to(DEVICE)
         model.eval()
         with torch.no_grad():
@@ -243,19 +261,20 @@ def visualize_prediction_result(y_before, results, losses):
     for ae_type in SUPPORTED_SAMPLE_TYPES:
         loss = losses[ae_type]
         y_after = results[ae_type]
-        draw(y_before, y_after,
-             f"AutoEncoder type: {ae_type} - Loss: {loss}")
+        draw(y_before, y_after, f"AutoEncoder type: {ae_type} - Loss: {loss}")
 
 
 def model_input_parse(sample):
     """
     将样本转换为模型输入的格式
     """
-    result, _ = parse_sample(sample,
-                             segmentations=None,
-                             time_series_length=TIME_SERIES_LENGTH,
-                             pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                             series_to_encode=SERIES_TO_ENCODE)
+    result, _ = parse_sample(
+        sample,
+        segmentations=None,
+        time_series_length=TIME_SERIES_LENGTH,
+        pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+        series_to_encode=SERIES_TO_ENCODE,
+    )
     if MODEL_TO_USE == "BP":
         result = result.reshape(TOTAL_LENGTH)
     elif MODEL_TO_USE == "GRU":
@@ -281,14 +300,14 @@ def draw(y_before, y_after, title=""):
 
     figure.suptitle(title)
     lines, labels = figure.axes[-1].get_legend_handles_labels()
-    figure.legend(lines, labels, loc='upper right')
+    figure.legend(lines, labels, loc="upper right")
     figure.set_tight_layout(True)
     plt.show()
 
 
 def predict(sample, show_plt=False):
     x = model_input_parse(sample)
-    results,losses, confidences = predict_raw_input(x)
+    results, losses, confidences = predict_raw_input(x)
     if show_plt:
         visualize_prediction_result(x, results, losses)
     return results, confidences
@@ -312,7 +331,6 @@ def sigmoid_d(x):
 
 
 if __name__ == "__main__":
-
     """
     z_s, labels = [], []
     for _ in range(50):
@@ -339,13 +357,14 @@ if __name__ == "__main__":
             confidences = test(type, show_plt)
             d2_confidences.append(list(confidences.values()))
         print("Confidence Matrix:", d2_confidences)
-        d2_confidences = preprocessing.MinMaxScaler().fit_transform(d2_confidences)  # 归一化
+        d2_confidences = preprocessing.MinMaxScaler().fit_transform(
+            d2_confidences
+        )  # 归一化
         return d2_confidences
 
-    #train_all()
+    train_all()
 
-    matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES),
-                      len(SUPPORTED_SAMPLE_TYPES)))
+    matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES), len(SUPPORTED_SAMPLE_TYPES)))
     test_cycles = 10
     for i in range(test_cycles):
         matrix += np.array(get_result_matrix(test_cycles == 1))
@@ -364,13 +383,10 @@ if __name__ == "__main__":
     plt.figure(figsize=(7, 6), dpi=150)
     plt.imshow(matrix, cmap="YlGn")
     plt.colorbar()
-    plt.xticks(range(len(SUPPORTED_SAMPLE_TYPES)),
-               SUPPORTED_SAMPLE_TYPES)
+    plt.xticks(range(len(SUPPORTED_SAMPLE_TYPES)), SUPPORTED_SAMPLE_TYPES)
     ax = plt.gca()
-    plt.setp(ax.get_xticklabels(), rotation=45, ha="right",
-             rotation_mode="anchor")
-    plt.yticks(range(len(SUPPORTED_SAMPLE_TYPES)),
-               SUPPORTED_SAMPLE_TYPES)
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    plt.yticks(range(len(SUPPORTED_SAMPLE_TYPES)), SUPPORTED_SAMPLE_TYPES)
     plt.title("AutoEncoder Confidence Matrix")
     plt.ylabel("Sample Type")
     plt.xlabel("AutoEncoder Type")

@@ -1,15 +1,16 @@
 import numpy as np
 import random
 
-from sensor.config import USE_SIMULATED_DATA
+from scipy import signal
+
 
 try:
-    from sensor.config import SUPPORTED_SAMPLE_TYPES
+    from sensor.config import SUPPORTED_SAMPLE_TYPES, USE_SIMULATED_DATA
     from sensor.simulate import generate_sample
     from sensor.utils import find_nearest
     from sensor.real_world import get_all_samples
 except:
-    from config import SUPPORTED_SAMPLE_TYPES
+    from config import SUPPORTED_SAMPLE_TYPES, USE_SIMULATED_DATA
     from simulate import generate_sample
     from utils import find_nearest
     from real_world import get_all_samples
@@ -23,7 +24,8 @@ def parse_time_series(time_series, time_series_length, pooling_factor_per_time_s
         result = np.pad(
             time_series, (0, time_series_length - len(time_series)), "constant"
         )
-    result = result[::pooling_factor_per_time_series]
+    # result = result[::pooling_factor_per_time_series]
+    result = signal.decimate(result, pooling_factor_per_time_series)
     return result
 
 
@@ -59,8 +61,12 @@ def get_sample_fake(type):
 
 
 def get_sample_real(type):
+    from segmentation import calc_segmentation_points
+
     samples, types = get_all_samples(type_list=[type])
-    return random.choice(samples)
+    sample = random.choice(samples)
+    segmentations = calc_segmentation_points(sample)
+    return sample, segmentations
 
 
 def generate_dataset_real(

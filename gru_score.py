@@ -18,10 +18,10 @@ from sensor.utils import find_nearest
 
 FILE_PATH = "./models/gru_score.pth"
 DATASET_LENGTH = 100  # 数据集总长度
-TIME_SERIES_DURATION = 20  # 20s
+TIME_SERIES_DURATION = 15  # 15s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
 SERIES_TO_ENCODE = ["A", "B", "C"]  # 生成三相电流序列，不生成power曲线
-POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
+POOLING_FACTOR_PER_TIME_SERIES = 3  # 每个时间序列的池化因子,用于降低工作量
 SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
 
 EPOCHS = 1000  # 训练数据集的轮次

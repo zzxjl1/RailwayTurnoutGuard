@@ -7,26 +7,27 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
-from torch.utils.data import Dataset
+from torch.utils.data import TensorDataset
 from segmentation import calc_segmentation_points
 from sensor import SUPPORTED_SAMPLE_TYPES
-from sensor.dataset import get_sample, generate_dataset, parse_sample
+from sensor import generate_dataset, parse_sample
 from sensor.config import SAMPLE_RATE
 from gru_score import GRUScore
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILE_PATH = "./models/gru_classification.pth"
-DATASET_LENGTH = 500  # 数据集总长度
+TRAINING_SET_LENGTH = 400  # 训练集长度
+TESTING_SET_LENGTH = 100  # 测试集长度
+DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH  # 数据集总长度
 EPOCHS = 1000  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
-DEVICE = torch.device('cuda' if torch.cuda.is_available()
-                      and not FORCE_CPU else 'cpu')
+DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
 SERIES_TO_ENCODE = ["A", "B", "C"]
 CHANNELS = len(SERIES_TO_ENCODE)
-TIME_SERIES_DURATION = 20  # 20s
+TIME_SERIES_DURATION = 15  # 15s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
 SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
@@ -39,14 +40,10 @@ class Vanilla_GRU(nn.Module):
         self.hidden_size = hidden_size
         self.num_layers = num_layers
 
-        self.gru = nn.GRU(input_size,
-                          hidden_size,
-                          batch_first=True)
+        self.gru = nn.GRU(input_size, hidden_size, batch_first=True)
 
     def forward(self, seq):
-        hidden = torch.zeros(self.num_layers,
-                             seq.size(0),
-                             self.hidden_size).to(DEVICE)
+        hidden = torch.zeros(self.num_layers, seq.size(0), self.hidden_size).to(DEVICE)
         # adj_seq = seq.permute(self.batch_size, len(seq), -1)
         output, hidden = self.gru(seq, hidden)
         return output, hidden
@@ -56,12 +53,12 @@ class Squeeze_Excite(nn.Module):
     def __init__(self, channel, reduction=16):
         super().__init__()
         self.squeeze = nn.AdaptiveAvgPool1d(1)
-        self.excite = nn.Sequential(nn.Linear(channel, channel // reduction, bias=False),
-                                    nn.ReLU(inplace=True),
-                                    nn.Linear(channel // reduction,
-                                              channel, bias=False),
-                                    nn.Sigmoid()
-                                    )
+        self.excite = nn.Sequential(
+            nn.Linear(channel, channel // reduction, bias=False),
+            nn.ReLU(inplace=True),
+            nn.Linear(channel // reduction, channel, bias=False),
+            nn.Sigmoid(),
+        )
 
     def forward(self, x):
         b, c, s = x.size()
@@ -77,32 +74,35 @@ class FCN_1D(nn.Module):
         self.out_channels = out_channels
 
         self.relu = nn.ReLU()
-        self.conv1 = nn.Conv1d(in_channels=in_channels,
-                               out_channels=out_channels,
-                               kernel_size=8,
-                               padding=4,
-                               padding_mode='replicate'
-                               )
+        self.conv1 = nn.Conv1d(
+            in_channels=in_channels,
+            out_channels=out_channels,
+            kernel_size=8,
+            padding=4,
+            padding_mode="replicate",
+        )
         torch.nn.init.xavier_uniform_(self.conv1.weight)
         self.bn1 = nn.BatchNorm1d(out_channels, eps=1e-03, momentum=0.99)
         self.SE1 = Squeeze_Excite(out_channels)
 
-        self.conv2 = nn.Conv1d(in_channels=out_channels,
-                               out_channels=out_channels*2,
-                               kernel_size=5,
-                               padding=2,
-                               padding_mode='replicate'
-                               )
+        self.conv2 = nn.Conv1d(
+            in_channels=out_channels,
+            out_channels=out_channels * 2,
+            kernel_size=5,
+            padding=2,
+            padding_mode="replicate",
+        )
         torch.nn.init.xavier_uniform_(self.conv2.weight)
-        self.bn2 = nn.BatchNorm1d(out_channels*2, eps=1e-03, momentum=0.99)
-        self.SE2 = Squeeze_Excite(out_channels*2)
+        self.bn2 = nn.BatchNorm1d(out_channels * 2, eps=1e-03, momentum=0.99)
+        self.SE2 = Squeeze_Excite(out_channels * 2)
 
-        self.conv3 = nn.Conv1d(in_channels=out_channels*2,
-                               out_channels=out_channels,
-                               kernel_size=3,
-                               padding=1,
-                               padding_mode='replicate'
-                               )
+        self.conv3 = nn.Conv1d(
+            in_channels=out_channels * 2,
+            out_channels=out_channels,
+            kernel_size=3,
+            padding=1,
+            padding_mode="replicate",
+        )
         torch.nn.init.xavier_uniform_(self.conv3.weight)
         self.bn3 = nn.BatchNorm1d(out_channels, eps=1e-03, momentum=0.99)
         self.gap = nn.AdaptiveAvgPool1d(1)
@@ -130,18 +130,18 @@ class FCN_1D(nn.Module):
 
 
 class GRU_FCN(nn.Module):
-    def __init__(self,  seq_len, n_class, dropout_rate, hidden_size):
+    def __init__(self, seq_len, n_class, dropout_rate, hidden_size):
         super().__init__()
-        self.GRU_model = Vanilla_GRU(input_size=CHANNELS,
-                                     hidden_size=hidden_size,
-                                     num_layers=1).to(DEVICE)
-        self.FCN_model = FCN_1D(in_channels=CHANNELS,
-                                out_channels=hidden_size).to(DEVICE)
+        self.GRU_model = Vanilla_GRU(
+            input_size=CHANNELS, hidden_size=hidden_size, num_layers=1
+        ).to(DEVICE)
+        self.FCN_model = FCN_1D(in_channels=CHANNELS, out_channels=hidden_size).to(
+            DEVICE
+        )
         self.seq_len = seq_len
 
         self.dropout = nn.Dropout(p=dropout_rate)
-        self.Dense = nn.Linear(
-            in_features=hidden_size*2, out_features=n_class)
+        self.Dense = nn.Linear(in_features=hidden_size * 2, out_features=n_class)
         self.softmax = nn.Softmax(dim=1)
 
     def forward(self, seq):
@@ -158,10 +158,7 @@ class GRU_FCN(nn.Module):
 
 
 model = GRU_FCN(
-    seq_len=SEQ_LENGTH,
-    n_class=N_CLASSES,
-    dropout_rate=0.2,
-    hidden_size=128
+    seq_len=SEQ_LENGTH, n_class=N_CLASSES, dropout_rate=0.2, hidden_size=128
 ).to(DEVICE)
 
 loss = nn.CrossEntropyLoss()
@@ -174,11 +171,13 @@ def model_input_parse(sample, segmentations=None, batch_simulation=True):
     """
     if segmentations is None:
         segmentations = calc_segmentation_points(sample)
-    sample_array, seg_index = parse_sample(sample,
-                                           segmentations,
-                                           time_series_length=TIME_SERIES_LENGTH,
-                                           pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
-                                           series_to_encode=SERIES_TO_ENCODE)
+    sample_array, seg_index = parse_sample(
+        sample,
+        segmentations,
+        time_series_length=TIME_SERIES_LENGTH,
+        pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+        series_to_encode=SERIES_TO_ENCODE,
+    )
     x = sample_array.transpose()
 
     if batch_simulation:
@@ -187,46 +186,34 @@ def model_input_parse(sample, segmentations=None, batch_simulation=True):
     return x
 
 
-class Dataset(Dataset):
-    def __init__(self, dataset_length):
-        self.y = []  # 目标值
-        self.x = []  # 特征值
-        self.generate_dataset(dataset_length)
+def get_dataloader():
+    X, _, labels = generate_dataset(
+        dataset_length=TRAINING_SET_LENGTH + TESTING_SET_LENGTH,
+        time_series_length=TIME_SERIES_LENGTH,
+        sample_type=None,
+        pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
+        series_to_encode=SERIES_TO_ENCODE,
+    )
+    X = torch.tensor(X, dtype=torch.float, requires_grad=True).to(DEVICE)  # 转换为tensor
+    X = X.transpose(1, 2)  # 转换为(batch_size, channels, seq_len)的格式
+    Y = []
+    for label in labels:
+        index = SUPPORTED_SAMPLE_TYPES.index(label)
+        Y.append([0] * index + [1] + [0] * (len(SUPPORTED_SAMPLE_TYPES) - index - 1))
+    Y = torch.tensor(Y, dtype=torch.float, requires_grad=True).to(DEVICE)
 
-    def generate_dataset(self, num):
-        with alive_bar(num, title="数据集生成中") as bar:
-            while len(self.x) < num:  # 生成num个数据
-                assert len(self.x) == len(self.y)
-                sample_type = random.choice(SUPPORTED_SAMPLE_TYPES)
-                sample, segmentations = get_sample(sample_type)  # 生成样本
-                x = model_input_parse(
-                    sample,
-                    segmentations,
-                    batch_simulation=False
-                )  # 转换为模型输入格式
-                self.x.append(x.astype(np.float32))
-                # one-hot encoding
-                index = SUPPORTED_SAMPLE_TYPES.index(sample_type)
-                self.y.append([0] * index + [1] + [0] *
-                              (len(SUPPORTED_SAMPLE_TYPES) - index - 1))
-                bar()  # 进度条+1
+    train_ds = TensorDataset(X[:TRAINING_SET_LENGTH], Y[:TRAINING_SET_LENGTH])
+    test_ds = TensorDataset(X[TRAINING_SET_LENGTH:], Y[TRAINING_SET_LENGTH:])
 
-    def __len__(self):
-        assert len(self.x) == len(self.y)
-        return len(self.y)
-
-    def __getitem__(self, idx):
-        x = self.x[idx]
-        y = self.y[idx]
-        return x, np.array(y)
+    train_dl = DataLoader(train_ds, batch_size=BATCH_SIZE, shuffle=True)
+    test_dl = DataLoader(test_ds, batch_size=BATCH_SIZE, shuffle=True)
+    return train_dl, test_dl
 
 
 def train():
-    dataset = Dataset(DATASET_LENGTH)
-    loader = DataLoader(dataset, batch_size=BATCH_SIZE,
-                        shuffle=True)
+    train_dl, test_dl = get_dataloader()
     for epoch in range(EPOCHS):  # 训练EPOCHS轮
-        for i, (x, y) in enumerate(loader):
+        for i, (x, y) in enumerate(train_dl):
             y = y.float().to(DEVICE)
             optimizer.zero_grad()  # 梯度清零
             output = model(x)  # 前向传播
@@ -238,7 +225,6 @@ def train():
 
 
 def predict_raw_input(x):
-
     assert os.path.exists(FILE_PATH), "model not found，please train first"
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
 
@@ -252,32 +238,26 @@ def predict_raw_input(x):
 
 
 def predict(sample, segmentations=None):
-    x = model_input_parse(
-        sample,
-        segmentations,
-        batch_simulation=True
-    )  # 转换为模型输入格式
+    x = model_input_parse(sample, segmentations, batch_simulation=True)  # 转换为模型输入格式
     output = predict_raw_input(x)
     return output.squeeze()
 
 
-def test(type=None):
-    if type is None:
-        type = random.choice(SUPPORTED_SAMPLE_TYPES)
-    sample, segmentations = get_sample(type)  # 生成样本
-    output = predict(sample, segmentations)
-    result_pretty = parse_predict_result(output)  # 解析结果
-    print(result_pretty)
-    label = get_label_from_result_pretty(result_pretty)  # 获取结果
-    print(type, label)
-    return label == type
+def test():
+    _, test_dl = get_dataloader()
+    correct = 0
+    total = 0
+    for i, (x, y) in enumerate(test_dl):
+        y = y.float().to(DEVICE)
+        output = model(x)
+        _, predicted = torch.max(output.data, 1)
+        _, label = torch.max(y.data, 1)
+        total += y.size(0)
+        correct += (predicted == label).sum().item()
+    return correct / total
 
 
 if __name__ == "__main__":
-    # train()
+    train()
 
-    # test(type="H5")
-
-    test_cycle = 100
-    accuracy = sum([test() for _ in range(test_cycle)])/test_cycle
-    print("accuracy: {}".format(accuracy))
+    print("accuracy: {}".format(test()))

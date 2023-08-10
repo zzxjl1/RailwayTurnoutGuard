@@ -84,7 +84,12 @@ def parse(df, i):
     return result
 
 
+CACHE = {}
+
+
 def get_samples_by_type(type="normal"):
+    if type in CACHE:
+        return CACHE[type]
     result = []
     df = pd.read_excel(f"./sensor/data/{type}.xlsx")  # 读取excel文件
     print(f"read {type}.xlsx")
@@ -96,7 +101,7 @@ def get_samples_by_type(type="normal"):
             print(f"line {i} validate failed")
             continue
 
-        print(f"line {i} parsed")
+        # print(f"line {i} parsed")
         try:
             temp = parse(df, i)  # 解析数据
         except:
@@ -106,16 +111,11 @@ def get_samples_by_type(type="normal"):
         result.append(temp)
         i += 4
 
-    print(len(result))
+    CACHE[type] = result
     return result
 
 
-all_samples_cache = None
-
-
 def get_all_samples(type_list=SUPPORTED_SAMPLE_TYPES):
-    if all_samples_cache is not None:
-        return all_samples_cache
     samples = []
     types = []
     for type in type_list:
@@ -127,11 +127,5 @@ def get_all_samples(type_list=SUPPORTED_SAMPLE_TYPES):
 
 
 if __name__ == "__main__":
-    import os
-    import sys
-
-    parentdir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    sys.path.insert(0, parentdir)
-
-    for sample, type in zip(*get_all_samples()):
-        show_sample(sample, type)
+    samples, types = get_all_samples()
+    print(len(samples))

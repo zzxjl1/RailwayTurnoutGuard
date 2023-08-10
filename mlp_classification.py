@@ -15,24 +15,24 @@ import torch.nn.functional as F
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
-from extract_features import IGNORE_LIST, calc_features,SERIES_TO_ENCODE
+from extract_features import IGNORE_LIST, calc_features, SERIES_TO_ENCODE
 from alive_progress import alive_bar
 from sensor import SUPPORTED_SAMPLE_TYPES, get_sample
 from gru_score import GRUScore
+from sensor.real_world import get_all_samples
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILE_PATH = "./models/mlp_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = True  # 强制使用CPU
-DEVICE = torch.device('cuda' if torch.cuda.is_available() and not FORCE_CPU
-                      else 'cpu')
-print('Using device:', DEVICE)
-EPOCHS = 100  # 训练数据集的轮次
-LEARNING_RATE = 1e-4  # 学习率
+DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
+print("Using device:", DEVICE)
+EPOCHS = 200  # 训练数据集的轮次
+LEARNING_RATE = 1e-3  # 学习率
 
 INPUT_VECTOR_SIZE = 1 + 15 * len(SERIES_TO_ENCODE) * 3 - len(IGNORE_LIST)  # 输入向量的大小
-TRANING_SET_LENGTH = 800  # 训练集长度
-TESTING_SET_LENGTH = 200  # 测试集长度
+TRANING_SET_LENGTH = 400  # 训练集长度
+TESTING_SET_LENGTH = 100  # 测试集长度
 DATASET_LENGTH = TRANING_SET_LENGTH + TESTING_SET_LENGTH
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
 
@@ -40,8 +40,7 @@ N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
 def weight_init(m):
     """初始化权重"""
     if isinstance(m, nn.Conv3d):
-        n = m.kernel_size[0] * m.kernel_size[1] * \
-            m.kernel_size[2] * m.out_channels
+        n = m.kernel_size[0] * m.kernel_size[1] * m.kernel_size[2] * m.out_channels
         m.weight.data.normal_(0, math.sqrt(2.0 / n))
         m.bias.data.zero_()
     elif isinstance(m, nn.BatchNorm3d):
@@ -96,8 +95,9 @@ BP_Net = nn.Sequential(
 """
 
 
-model = MLP(input_vector_size=INPUT_VECTOR_SIZE,
-               output_vector_size=N_CLASSES).to(DEVICE)  # 使用BP模型
+model = MLP(input_vector_size=INPUT_VECTOR_SIZE, output_vector_size=N_CLASSES).to(
+    DEVICE
+)  # 使用BP模型
 print(model)
 
 optimizer = optim.Adam(model.parameters(), lr=LEARNING_RATE)  # adam优化器
@@ -143,38 +143,48 @@ def fit(train_dl, valid_dl):
         model.eval()  # 验证模式
         with torch.no_grad():
             losses, nums = zip(
-                *[loss_batch(model, loss_func, xb, yb) for xb, yb in valid_dl])
+                *[loss_batch(model, loss_func, xb, yb) for xb, yb in valid_dl]
+            )
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
-        print('当前step:' + str(step), '验证集损失：' + str(val_loss))
+        print("当前step:" + str(step), "验证集损失：" + str(val_loss))
 
 
-def generate_dataset(num):
+def generate_dataset():
     """生成数据集"""
     x = []  # 特征值
     y = []  # 目标值
-    with alive_bar(num, title="数据集生成中") as bar:
-        while len(x) < num:  # 生成num个数据
-            for sample_type in SUPPORTED_SAMPLE_TYPES:  # 每个类型
-                if len(x) >= num:  # 如果数量符合要求
-                    break
-                sample, _ = get_sample(sample_type)  # 生成样本
-                t = list(calc_features(sample).values())  # 计算特征
-                # STANDARDIZE
-                #t = (t - np.mean(t)) / np.std(t)
-                assert not contains_nan(t)  # 检查是否有nan
-                x.append(t)
-                # one-hot encoding
-                index = SUPPORTED_SAMPLE_TYPES.index(sample_type)
-                y.append([0] * index + [1] + [0] *
-                         (len(SUPPORTED_SAMPLE_TYPES) - index - 1))
-                bar()  # 进度条+1
-    return x, y
+
+    samples, types = get_all_samples()  # 获取所有样本
+    assert len(samples) >= DATASET_LENGTH
+    samples, types = samples[:DATASET_LENGTH], types[:DATASET_LENGTH]  # 取前num个样本
+
+    with alive_bar(DATASET_LENGTH, title="数据集生成中") as bar:
+        for sample, sample_type in zip(samples, types):
+            t = list(calc_features(sample).values())  # 计算特征
+            # STANDARDIZE
+            # t = (t - np.mean(t)) / np.std(t)
+            assert not contains_nan(t)  # 检查是否有nan
+            x.append(t)
+            # one-hot encoding
+            index = SUPPORTED_SAMPLE_TYPES.index(sample_type)
+            y.append(
+                [0] * index + [1] + [0] * (len(SUPPORTED_SAMPLE_TYPES) - index - 1)
+            )
+            bar()  # 进度条+1
+
+    x = torch.tensor(np.array(x), dtype=torch.float, requires_grad=True)
+    y = torch.tensor(np.array(y), dtype=torch.float, requires_grad=True)
+    x, y = x.to(DEVICE), y.to(DEVICE)
+    print(x.shape, y.shape)
+    # print(x[0], y[0])
+    train_ds = TensorDataset(x[:TRANING_SET_LENGTH], y[:TRANING_SET_LENGTH])  # 训练集
+    valid_ds = TensorDataset(x[TRANING_SET_LENGTH:], y[TRANING_SET_LENGTH:])  # 验证集
+    return train_ds, valid_ds
 
 
 def predict_raw_input(x):
     """预测,输入为原始数据，直接入模型"""
-    assert os.path.exists(
-        FILE_PATH), "model not found, please run train() first!"
+    assert os.path.exists(FILE_PATH), "model not found, please run train() first!"
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
     with torch.no_grad():
@@ -184,17 +194,7 @@ def predict_raw_input(x):
 
 def train():
     """训练模型"""
-    DATASET = generate_dataset(DATASET_LENGTH)  # 生成数据集
-
-    x, y = map(lambda a: torch.tensor(np.array(a), dtype=torch.float,
-               requires_grad=True), DATASET)  # 转换为tensor
-    x, y = x.to(DEVICE), y.to(DEVICE)
-    print(x.shape, y.shape)
-    #print(x[0], y[0])
-    train_ds = TensorDataset(x[:TRANING_SET_LENGTH],
-                             y[:TRANING_SET_LENGTH])  # 训练集
-    valid_ds = TensorDataset(
-        x[TRANING_SET_LENGTH:], y[TRANING_SET_LENGTH:])  # 验证集
+    train_ds, valid_ds = generate_dataset()  # 生成数据集
     train_dl, valid_dl = get_data(train_ds, valid_ds)  # 转换为dataloader
     fit(train_dl, valid_dl)  # 开始训练
 
@@ -210,25 +210,23 @@ def predict(sample, segmentations=None):
     return result.squeeze()
 
 
-def test(type="normal"):
-    """生成type类型的样本，然后跑模型预测，最后返回是否正确"""
-    sample, _ = get_sample(type)  # 生成样本
-    result = predict(sample)  # 预测
-    result_pretty = parse_predict_result(result)  # 解析结果
-    print("预测结果：", result_pretty)
-    label = get_label_from_result_pretty(result_pretty)  # 获取预测结果标签字符串
-    print(type, label)
-    return label == type  # 预测是否正确
+def test():
+    _, valid_ds = generate_dataset()  # 生成数据集
+    dataloader = DataLoader(valid_ds, batch_size=BATCH_SIZE, shuffle=True)
+    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
+    model.eval()  # 验证模式
+    correct = 0
+    total = 0
+    for i, (x, y) in enumerate(dataloader):
+        y = y.float().to(DEVICE)
+        output = model(x)
+        _, predicted = torch.max(output.data, 1)
+        _, label = torch.max(y.data, 1)
+        total += y.size(0)
+        correct += (predicted == label).sum().item()
+    return correct / total
 
 
-if __name__ == '__main__':
-
-    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
-
-    test_cycles = 100  # 测试次数
-    test_results = []
-    for _ in range(test_cycles):
-        t = test(random.choice(SUPPORTED_SAMPLE_TYPES))  # 随机生成一个类型的样本，然后预测
-        test_results.append(t)  # 记录结果
-    print("accuracy:", test_results.count(
-        True) / test_cycles)  # 输出准确率（94.5%左右）
+if __name__ == "__main__":
+    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    test()  # 测试模型

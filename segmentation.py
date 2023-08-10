@@ -21,8 +21,8 @@ def get_d(s, smooth=True, show_plt=False, name=""):
         window_length：窗口长度，该值需为正奇整数
         k值：polyorder为对窗口内的数据点进行k阶多项式拟合，k的值需要小于window_length
         """
-        y = savgol_filter(y, window_length=7, polyorder=3)
-        y = savgol_filter(y, window_length=5, polyorder=1)
+        y = savgol_filter(y, window_length=5, polyorder=2)
+        # y = savgol_filter(y, window_length=5, polyorder=1)
     if show_plt:  # debug usage
         plt.figure(dpi=150, figsize=(9, 2))
         plt.plot(*s, label="original values")
@@ -123,7 +123,7 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
 
     d1_result = get_d(series, smooth=True, show_plt=False, name=f"{name} d1")  # 计算一阶导数
     d2_result = get_d(
-        d1_result, smooth=True, show_plt=False, name=f"{name} d2"
+        d1_result, smooth=False, show_plt=False, name=f"{name} d2"
     )  # 计算二阶导数
     segmentation_point_1_index, segmentation_point_1_x = find_segmentation_point_1(
         *d2_result

@@ -25,22 +25,21 @@ def get_d(s, smooth=True, show_plt=False, name=""):
         y = savgol_filter(y, window_length=5, polyorder=1)
     if show_plt:  # debug usage
         plt.figure(dpi=150, figsize=(9, 2))
-        plt.plot(*s, label='original values')
+        plt.plot(*s, label="original values")
         plt.plot(x, y, label="curve after filtering")
-        plt.legend(loc='best')
+        plt.legend(loc="best")
         plt.title(f"{name} input")
         plt.xlabel("Time(s)")
         plt.show()
     assert len(x) > 2  # 算法要求至少需要2个点
     result = []
-    for i in range(len(x)-1):  # 计算曲线的斜率
-        t = (y[i+1]-y[i])/(x[i+1]-x[i])
+    for i in range(len(x) - 1):  # 计算曲线的斜率
+        t = (y[i + 1] - y[i]) / (x[i + 1] - x[i])
         result.append(t)
-    assert len(result) == len(x)-1  # 斜率数组的个数比点的个数少1
+    assert len(result) == len(x) - 1  # 斜率数组的个数比点的个数少1
     if show_plt:  # debug usage
-        draw_line(x, result+[0],
-                  title=f"{name} output", y_label="Result Value")
-    return x, result+[0]  # 返回斜率
+        draw_line(x, result + [0], title=f"{name} output", y_label="Result Value")
+    return x, result + [0]  # 返回斜率
 
 
 def remove_duplicate_points(points):
@@ -69,7 +68,9 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
     return index, result
 
 
-def find_segmentation_point_2(x, y, original_series, segmentation_point_1_index, gru_score):
+def find_segmentation_point_2(
+    x, y, original_series, segmentation_point_1_index, gru_score
+):
     """寻找第二个分段点（between stage 2 and stage 3）"""
     _, series_y = original_series
     # 切掉stage 1
@@ -88,10 +89,13 @@ def find_segmentation_point_2(x, y, original_series, segmentation_point_1_index,
         time_in_sec = x[index]  # 峰值的时间
         stage2_avg = np.mean(series_y[:index])  # stage 2的平均值
         stage3_avg = np.mean(series_y[index:])  # stage 3的平均值
-        score = get_score_by_time(gru_score, time_in_sec) * prominences[i] * \
-            (abs(y[index] - stage2_avg)/abs(y[index]-stage3_avg))
+        score = (
+            get_score_by_time(gru_score, time_in_sec)
+            * prominences[i]
+            * (abs(y[index] - stage2_avg) / abs(y[index] - stage3_avg))
+        )
         scores.append(score)
-        #print(time_in_sec, prominences[i], score)
+        # print(time_in_sec, prominences[i], score)
     index = np.argmax(scores)  # 找到得分最高，返回第几个峰的索引
     index = peak_idx[index]  # 点的索引
     result = x[index]  # 峰值的x值（时间）
@@ -117,14 +121,16 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
     x, y = series
     duration = x[-1]  # 曲线的总时长
 
-    d1_result = get_d(series, smooth=True, show_plt=False,
-                      name=f"{name} d1")  # 计算一阶导数
-    d2_result = get_d(d1_result, smooth=True,
-                      show_plt=False, name=f"{name} d2")  # 计算二阶导数
+    d1_result = get_d(series, smooth=True, show_plt=False, name=f"{name} d1")  # 计算一阶导数
+    d2_result = get_d(
+        d1_result, smooth=True, show_plt=False, name=f"{name} d2"
+    )  # 计算二阶导数
     segmentation_point_1_index, segmentation_point_1_x = find_segmentation_point_1(
-        *d2_result)  # 寻找第一个分段点
+        *d2_result
+    )  # 寻找第一个分段点
     _, segmentation_point_2_x = find_segmentation_point_2(
-        *d2_result, series, segmentation_point_1_index, gru_score)  # 寻找第二个分段点
+        *d2_result, series, segmentation_point_1_index, gru_score
+    )  # 寻找第二个分段点
     if show_plt:  # debug usage
         fig = plt.figure(dpi=150, figsize=(9, 4))
         ax = fig.subplots()
@@ -133,31 +139,36 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
         ax_new = ax.twinx().twiny()
         ax_new.set_yticks([])  # 不显示y轴
         ax_new.set_xticks([])  # 不显示x轴
-        ax_new.pcolormesh(gru_score[:time_to_index(duration)].reshape(
-            1, -1), cmap="Reds", alpha=0.7)
+        ax_new.pcolormesh(
+            gru_score[: time_to_index(duration)].reshape(1, -1), cmap="Reds", alpha=0.7
+        )
         # ax_new.plot(*model_output_to_xy(gru_score, end_sec=duration), "r")
         ax1 = ax.twinx()  # 生成第二个y轴
         ax2 = ax.twinx()  # 生成第三个y轴
         # ax2.plot(*d1_result, label="d1")
-        ax2.plot(*d2_result, label="Legacy Scheme", color="red",
-                 linewidth=1, alpha=0.2)
+        ax2.plot(*d2_result, label="Legacy Scheme", color="red", linewidth=1, alpha=0.2)
         ax1.plot(x, y, label="Time Series", color="blue")
         ax1.set_yticks([])  # 不显示y轴
         ax2.set_yticks([])  # 不显示y轴
         # 画竖线
         if segmentation_point_1_x is not None:
-            plt.axvline(x=segmentation_point_1_x, color='r',
-                        linestyle='--', label="Segmentation Point")
+            plt.axvline(
+                x=segmentation_point_1_x,
+                color="r",
+                linestyle="--",
+                label="Segmentation Point",
+            )
         if segmentation_point_2_x is not None:
-            plt.axvline(x=segmentation_point_2_x, color='r',
-                        linestyle='--')
+            plt.axvline(x=segmentation_point_2_x, color="r", linestyle="--")
         plt.title(f"Channel {name} Segmentation Result")
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
-        heatmap_patch = patches.Rectangle(
-            (0, 0), 1, 1, fc="r", alpha=0.7)
-        plt.legend(lines+[heatmap_patch] + lines2, labels +
-                   ["GRU Score Heatmap"] + labels2, loc='upper right')  # 显示图例
+        heatmap_patch = patches.Rectangle((0, 0), 1, 1, fc="r", alpha=0.7)
+        plt.legend(
+            lines + [heatmap_patch] + lines2,
+            labels + ["GRU Score Heatmap"] + labels2,
+            loc="upper right",
+        )  # 显示图例
         ax.set_xlabel("Time(s)")
         plt.tight_layout()
         plt.show()
@@ -178,17 +189,19 @@ def calc_segmentation_points(sample, show_plt=False):
         if name == "power":  # power曲线不作分段依据，因为感觉会起反作用
             continue
         result[name] = calc_segmentation_points_single_series(
-            series, gru_score=gru_score, name=name, show_plt=show_plt)  # 计算分段点
+            series, gru_score=gru_score, name=name, show_plt=show_plt
+        )  # 计算分段点
     # print(result)
     # 做了一个融合，不同曲线算出的分段点可能不同，因此需要取最佳的分段点
     pt1, pt2 = [i[0] for i in result.values()], [i[1] for i in result.values()]
     # 去除None
-    pt1, pt2 = [i for i in pt1 if i is not None], [
-        i for i in pt2 if i is not None]
+    pt1, pt2 = [i for i in pt1 if i is not None], [i for i in pt2 if i is not None]
     # 去除离群点
 
     def remove_outlier(pt):
         if not pt:
+            return pt
+        if len(pt) == 1:
             return pt
         pt = np.array(pt).reshape(-1, 1)
         result = LOF(n_neighbors=1).fit_predict(pt)
@@ -197,7 +210,7 @@ def calc_segmentation_points(sample, show_plt=False):
 
     pt1 = remove_outlier(pt1)
     pt2 = remove_outlier(pt2)
-    #print(pt1, pt2)
+    # print(pt1, pt2)
     # 求平均值
     final_result = np.mean(pt1) if pt1 else None, np.mean(pt2) if pt2 else None
     # 特殊情况：如果第二个分段点小于等于第一个分段点，丢弃
@@ -256,5 +269,6 @@ if __name__ == "__main__":
         name = "A"
         series = sample[name]
         result = calc_segmentation_points_single_series(
-            series, gru_score, name=f"{name} ({type}) ", show_plt=True)
+            series, gru_score, name=f"{name} ({type}) ", show_plt=True
+        )
         print("🎁comparison", segmentations, result)

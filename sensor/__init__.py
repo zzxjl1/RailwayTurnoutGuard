@@ -10,6 +10,10 @@ random_float = utils.random_float
 show_sample = utils.show_sample
 add_noise = simulate.add_noise
 interpolate = simulate.interpolate
-get_sample = dataset.get_sample
-generate_dataset = dataset.generate_dataset
 parse_sample = dataset.parse_sample
+if USE_SIMULATED_DATA:
+    get_sample = dataset.get_sample_fake
+    generate_dataset = dataset.generate_dataset_fake
+else:
+    get_sample = dataset.get_sample_real
+    generate_dataset = dataset.generate_dataset_real

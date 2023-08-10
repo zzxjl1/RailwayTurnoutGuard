@@ -24,7 +24,7 @@ from tool_utils import get_label_from_result_pretty, parse_predict_result
 
 FILE_PATH = "./models/mlp_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
-FORCE_CPU = True  # 强制使用CPU
+FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 print("Using device:", DEVICE)
 EPOCHS = 200  # 训练数据集的轮次
@@ -194,8 +194,6 @@ def predict_raw_input(x):
 
 def train():
     """训练模型"""
-    train_ds, valid_ds = generate_dataset()  # 生成数据集
-    train_dl, valid_dl = get_data(train_ds, valid_ds)  # 转换为dataloader
     fit(train_dl, valid_dl)  # 开始训练
 
     torch.save(model, FILE_PATH)  # 保存模型
@@ -211,22 +209,22 @@ def predict(sample, segmentations=None):
 
 
 def test():
-    _, valid_ds = generate_dataset()  # 生成数据集
-    dataloader = DataLoader(valid_ds, batch_size=BATCH_SIZE, shuffle=True)
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
     correct = 0
     total = 0
-    for i, (x, y) in enumerate(dataloader):
+    for i, (x, y) in enumerate(valid_dl):
         y = y.float().to(DEVICE)
         output = model(x)
         _, predicted = torch.max(output.data, 1)
         _, label = torch.max(y.data, 1)
         total += y.size(0)
         correct += (predicted == label).sum().item()
-    return correct / total
+    print("accu:", correct / total)
 
 
 if __name__ == "__main__":
+    train_ds, valid_ds = generate_dataset()  # 生成数据集
+    train_dl, valid_dl = get_data(train_ds, valid_ds)  # 转换为dataloader
     # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
     test()  # 测试模型

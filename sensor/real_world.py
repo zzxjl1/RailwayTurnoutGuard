@@ -3,6 +3,8 @@
 """
 import numpy as np
 
+from sensor.utils import shuffle
+
 
 try:
     from sensor.config import SUPPORTED_SAMPLE_TYPES
@@ -70,7 +72,8 @@ def polish_data(data, point_count, type):
         y = [float(i) / 100 for i in y]  # y全部元素除以100
     assert len(x) == len(y)  # x和y长度相等
 
-    return interpolate(x, y)  # 插值
+    # return interpolate(x, y)  # 插值
+    return x, y
 
 
 def parse(df, i):
@@ -88,6 +91,7 @@ CACHE = {}
 
 
 def get_samples_by_type(type="normal"):
+    global CACHE
     if type in CACHE:
         return CACHE[type]
     result = []
@@ -123,7 +127,7 @@ def get_all_samples(type_list=SUPPORTED_SAMPLE_TYPES):
         for sample in t:
             samples.append(sample)
             types.append(type)
-    return samples, types
+    return shuffle(samples, types)
 
 
 if __name__ == "__main__":

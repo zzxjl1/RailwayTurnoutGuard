@@ -33,9 +33,9 @@ TOTAL_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES
 MODEL_TO_USE = "BP"
 LEARNING_RATE = 1e-3  # 学习率
 BATCH_SIZE = 64  # 批大小
-EPOCHS = 500  # 训练轮数
+EPOCHS = 1000  # 训练轮数
 FILE_PATH = "./models/auto_encoder/"  # 模型保存路径
-FORCE_CPU = True  # 强制使用CPU
+FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 print("Using device:", DEVICE)
 
@@ -139,7 +139,7 @@ models = {
     ).to(DEVICE),
 }
 
-model = models[MODEL_TO_USE]
+model = models[MODEL_TO_USE].to(DEVICE)
 print(model)
 
 

@@ -3,6 +3,8 @@ import random
 
 from scipy import signal
 
+from sensor.utils import shuffle
+
 
 try:
     from sensor.config import SUPPORTED_SAMPLE_TYPES, USE_SIMULATED_DATA
@@ -77,6 +79,7 @@ def generate_dataset_real(
     series_to_encode=["A", "B", "C"],
 ):
     """生成数据集"""
+
     from segmentation import calc_segmentation_points
 
     x, seg_indexs, types = [], [], []

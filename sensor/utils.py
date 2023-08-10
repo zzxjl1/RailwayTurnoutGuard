@@ -1,6 +1,7 @@
 import random
 import matplotlib.pyplot as plt
 import numpy as np
+
 try:
     from .config import SAMPLE_RATE
 except:
@@ -46,8 +47,9 @@ def generate_power_series(current_series, power_factor=0.8, show_plt=False):
     for phase in ["A", "B", "C"]:
         for i in range(length):
             _, current = current_series[phase]
-            result[i] += current[i]*220*power_factor * \
-                1.732 if i < len(current) else 0
+            result[i] += (
+                current[i] * 220 * power_factor * 1.732 if i < len(current) else 0
+            )
     if show_plt:
         plt.plot(x, result)
         plt.title("Power Series")
@@ -63,11 +65,11 @@ def show_sample(result, type=""):
     ax2 = ax1.twinx()
     for phase in ["A", "B", "C"]:
         ax1.plot(*result[phase], label=f"Phase {phase}")
-    ax2.plot(*result["power"], 'b--', label="Power")
+    ax2.plot(*result["power"], "b--", label="Power")
     plt.title(f"Sample {type.capitalize()}")
     ax1.set_xlabel("Time(s)")
     ax1.set_ylabel("Current(A)")
-    ax2.set_ylabel('Power(W)')
+    ax2.set_ylabel("Power(W)")
 
     ax1.set_ylim(bottom=0, top=5)
     ax2.set_ylim(bottom=0, top=5000)  # 限制y轴范围，避免图像过于密集
@@ -75,7 +77,7 @@ def show_sample(result, type=""):
     plt.xlim(0, None)  # 设置x轴范围
     lines, labels = ax1.get_legend_handles_labels()
     lines2, labels2 = ax2.get_legend_handles_labels()
-    plt.legend(lines + lines2, labels + labels2, loc='best')
+    plt.legend(lines + lines2, labels + labels2, loc="best")
     plt.show()
 
 
@@ -89,8 +91,7 @@ def add_noise(x, y, noise_level=0.05, percentage=0.2):
             noice_range = (-noise_level[1], -noise_level[0])
         else:
             noice_range = noise_level
-    n = [random_float(*noice_range)*random.choice([1, -1])
-         for _ in range(len(x))]
+    n = [random_float(*noice_range) * random.choice([1, -1]) for _ in range(len(x))]
     for i in range(len(x)):
         if random.random() > percentage:  # 按概率加入噪声
             continue
@@ -107,10 +108,9 @@ def correct_curve(x, y):
 
 def interpolate(x, y):
     """根据关键点插值到固定采样率"""
-    interper = scipy.interpolate.interp1d(x, y, kind='linear')  # 线性插值
-    time_elipsed = max(x)-min(x)  # 总时间
-    x = np.linspace(min(x), max(x), round(
-        time_elipsed*SAMPLE_RATE))  # 插值
+    interper = scipy.interpolate.interp1d(x, y, kind="linear")  # 线性插值
+    time_elipsed = max(x) - min(x)  # 总时间
+    x = np.linspace(min(x), max(x), round(time_elipsed * SAMPLE_RATE))  # 插值
     y = interper(x)
 
     return correct_curve(x, y)
@@ -123,3 +123,10 @@ def draw_line(x, y, title="", y_label=""):
     plt.xlabel("Time(s)")
     plt.ylabel(y_label)
     plt.show()
+
+
+def shuffle(*lists):
+    """打乱多个列表"""
+    l = list(zip(*lists))
+    random.shuffle(l)
+    return zip(*l)

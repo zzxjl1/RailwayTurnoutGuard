@@ -10,7 +10,7 @@ from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
 from segmentation import calc_segmentation_points
 from sensor import SUPPORTED_SAMPLE_TYPES
-from sensor import generate_dataset, parse_sample
+from sensor import generate_dataset, parse_sample, get_sample
 from sensor.config import SAMPLE_RATE
 from gru_score import GRUScore
 from tool_utils import get_label_from_result_pretty, parse_predict_result
@@ -22,14 +22,14 @@ DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH  # 数据集总长度
 EPOCHS = 1000  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
 BATCH_SIZE = 64  # 每批处理的数据
-FORCE_CPU = True  # 强制使用CPU
+FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
 SERIES_TO_ENCODE = ["A", "B", "C"]
 CHANNELS = len(SERIES_TO_ENCODE)
 TIME_SERIES_DURATION = 15  # 15s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 采样率*时间，总共的数据点数
-POOLING_FACTOR_PER_TIME_SERIES = 5  # 每个时间序列的池化因子,用于降低工作量
+POOLING_FACTOR_PER_TIME_SERIES = 3  # 每个时间序列的池化因子,用于降低工作量
 SEQ_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES  # 降采样后的序列长度
 
 
@@ -211,7 +211,6 @@ def get_dataloader():
 
 
 def train():
-    train_dl, test_dl = get_dataloader()
     for epoch in range(EPOCHS):  # 训练EPOCHS轮
         for i, (x, y) in enumerate(train_dl):
             y = y.float().to(DEVICE)
@@ -244,20 +243,23 @@ def predict(sample, segmentations=None):
 
 
 def test():
-    _, test_dl = get_dataloader()
+    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
+    model.eval()  # 验证模式
     correct = 0
     total = 0
     for i, (x, y) in enumerate(test_dl):
         y = y.float().to(DEVICE)
         output = model(x)
+        print(output, y)
         _, predicted = torch.max(output.data, 1)
         _, label = torch.max(y.data, 1)
         total += y.size(0)
         correct += (predicted == label).sum().item()
-    return correct / total
+    print("accu:", correct / total)
 
 
 if __name__ == "__main__":
-    train()
+    train_dl, test_dl = get_dataloader()
+    # train()
 
-    print("accuracy: {}".format(test()))
+    test()

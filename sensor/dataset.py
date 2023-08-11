@@ -77,6 +77,7 @@ def generate_dataset_real(
     sample_type=None,
     pooling_factor_per_time_series=1,
     series_to_encode=["A", "B", "C"],
+    no_segmentation=False,
 ):
     """生成数据集"""
 
@@ -99,7 +100,7 @@ def generate_dataset_real(
     for sample in samples:
         array_sample, seg_index = parse_sample(
             sample,
-            calc_segmentation_points(sample),
+            calc_segmentation_points(sample) if not no_segmentation else None,
             time_series_length,
             pooling_factor_per_time_series,
             series_to_encode,

@@ -8,6 +8,7 @@ from torch import nn
 from gru_score import GRUScore
 from segmentation import calc_segmentation_points
 from sensor.config import SUPPORTED_SAMPLE_TYPES
+from sensor.real_world import get_all_samples
 from sensor.simulate import generate_sample
 from tool_utils import get_label_from_result_pretty, parse_predict_result
 import auto_encoder
@@ -16,7 +17,7 @@ import gru_classification
 from gru_classification import GRU_FCN, Vanilla_GRU, FCN_1D, Squeeze_Excite
 from mlp_classification import MLP
 from auto_encoder import BP_AE, EncoderRNN, DecoderRNN, GRU_AE
-from alive_progress import alive_it
+from alive_progress import alive_bar, alive_it
 
 FILE_PATH = "./models/result_fusion.pth"
 TRANING_SET_LENGTH = 400  # 训练集长度
@@ -26,24 +27,121 @@ BATCH_SIZE = 64  # 每批处理的数据
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 print("Using device:", DEVICE)
-EPOCHS = 2000  # 训练数据集的轮次
-LEARNING_RATE = 1e-4  # 学习率
+EPOCHS = 500  # 训练数据集的轮次
+LEARNING_RATE = 1e-3  # 学习率
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)
 INPUT_VECTOR_SIZE = 3 * N_CLASSES  # 输入向量大小
 
 
-model = nn.Sequential(
-    nn.BatchNorm1d(INPUT_VECTOR_SIZE),  # 归一化
-    nn.Linear(INPUT_VECTOR_SIZE, 64),  # 全连接
-    nn.ReLU(),  # 激活函数
-    nn.Linear(64, N_CLASSES),
-    nn.Softmax(dim=1),  # 分类任务最后用softmax层
-).to(DEVICE)
+class FuzzyLayer(nn.Module):
+    def __init__(self, input_dim, output_dim):
+        super(FuzzyLayer, self).__init__()
+
+        self.input_dim = input_dim
+        self.output_dim = output_dim
+
+        fuzzy_degree_weights = torch.Tensor(self.input_dim, self.output_dim)
+        self.fuzzy_degree = nn.Parameter(fuzzy_degree_weights)
+        sigma_weights = torch.Tensor(self.input_dim, self.output_dim)
+        self.sigma = nn.Parameter(sigma_weights)
+
+        # initialize fuzzy degree and sigma parameters
+        nn.init.xavier_uniform_(self.fuzzy_degree)  # fuzzy degree init
+        nn.init.ones_(self.sigma)  # sigma init
+
+    def forward(self, input):
+        fuzzy_out = []
+        for variable in input:
+            fuzzy_out_i = torch.exp(
+                -torch.sum(
+                    torch.sqrt((variable - self.fuzzy_degree) / (self.sigma**2))
+                )
+            )
+            if torch.isnan(fuzzy_out_i):
+                fuzzy_out.append(variable)
+            else:
+                fuzzy_out.append(fuzzy_out_i)
+        return torch.tensor(fuzzy_out, dtype=torch.float)
+
+
+class FusedFuzzyDeepNet(nn.Module):
+    def __init__(
+        self,
+        input_vector_size,
+        fuzz_vector_size,
+        num_class,
+        fuzzy_layer_input_dim=1,
+        fuzzy_layer_output_dim=1,
+        dropout_rate=0.2,
+        device=DEVICE,
+    ):
+        super(FusedFuzzyDeepNet, self).__init__()
+        self.device = device
+        self.input_vector_size = input_vector_size
+        self.fuzz_vector_size = fuzz_vector_size
+        self.num_class = num_class
+        self.fuzzy_layer_input_dim = fuzzy_layer_input_dim
+        self.fuzzy_layer_output_dim = fuzzy_layer_output_dim
+
+        self.dropout_rate = dropout_rate
+
+        self.bn = nn.BatchNorm1d(self.input_vector_size)
+        self.fuzz_init_linear_layer = nn.Linear(
+            self.input_vector_size, self.fuzz_vector_size
+        )
+
+        fuzzy_rule_layers = []
+        for i in range(self.fuzz_vector_size):
+            fuzzy_rule_layers.append(
+                FuzzyLayer(fuzzy_layer_input_dim, fuzzy_layer_output_dim)
+            )
+        self.fuzzy_rule_layers = nn.ModuleList(fuzzy_rule_layers)
+
+        self.dl_linear_1 = nn.Linear(self.input_vector_size, self.input_vector_size)
+        self.dl_linear_2 = nn.Linear(self.input_vector_size, self.input_vector_size)
+        self.dropout_layer = nn.Dropout(self.dropout_rate)
+        self.fusion_layer = nn.Linear(
+            self.input_vector_size * 2, self.input_vector_size
+        )
+        self.output_layer = nn.Linear(self.input_vector_size, self.num_class)
+        self.softmax = nn.Softmax(dim=1)
+
+    def forward(self, input):
+        input = self.bn(input)
+        fuzz_input = self.fuzz_init_linear_layer(input)
+        fuzz_output = torch.zeros(input.size(), dtype=torch.float, device=self.device)
+        for col_idx in range(fuzz_input.size()[1]):
+            col_vector = fuzz_input[:, col_idx : col_idx + 1]
+            fuzz_col_vector = (
+                self.fuzzy_rule_layers[col_idx](col_vector).unsqueeze(0).view(-1, 1)
+            )
+            fuzz_output[:, col_idx : col_idx + 1] = fuzz_col_vector
+
+        dl_layer_1_output = torch.sigmoid(self.dl_linear_1(input))
+        dl_layer_2_output = torch.sigmoid(self.dl_linear_2(dl_layer_1_output))
+        dl_layer_2_output = self.dropout_layer(dl_layer_2_output)
+
+        cat_fuzz_dl_output = torch.cat([fuzz_output, dl_layer_2_output], dim=1)
+
+        fused_output = torch.sigmoid(self.fusion_layer(cat_fuzz_dl_output))
+        fused_output = torch.relu(fused_output)
+
+        output = self.softmax(self.output_layer(fused_output))
+
+        return output
+
+
+model = FusedFuzzyDeepNet(
+    input_vector_size=INPUT_VECTOR_SIZE, fuzz_vector_size=8, num_class=N_CLASSES
+).to(
+    DEVICE
+)  # FNN模型
+
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
 loss_func = nn.CrossEntropyLoss()
 
 
-def model_input_parse(sample, segmentations, batch_simulation=True):
+def model_input_parse(sample, segmentations=None, batch_simulation=True):
     if segmentations is None:
         segmentations = calc_segmentation_points(sample)
     bp_result = mlp_classification.predict(sample, segmentations).to(DEVICE)
@@ -75,14 +173,22 @@ def predict(sample, segmentations=None):
 
 def generate_dataset():
     x, y = [], []
-    for i in alive_it(range(DATASET_LENGTH)):
-        type = random.choice(SUPPORTED_SAMPLE_TYPES)
-        sample, segmentations = generate_sample(type)
-        model_input = model_input_parse(sample, segmentations, batch_simulation=False)
-        x.append(model_input.detach().cpu().numpy())
-        index = SUPPORTED_SAMPLE_TYPES.index(type)
-        # one-hot编码
-        y.append([0] * index + [1] + [0] * (len(SUPPORTED_SAMPLE_TYPES) - index - 1))
+    samples, types = get_all_samples()  # 获取所有样本
+    assert len(samples) >= DATASET_LENGTH
+    samples, types = samples[:DATASET_LENGTH], types[:DATASET_LENGTH]  # 取前num个样本
+
+    with alive_bar(DATASET_LENGTH, title="数据集生成中") as bar:
+        for sample, sample_type in zip(samples, types):
+            model_input = model_input_parse(
+                sample, segmentations=None, batch_simulation=False
+            )
+            x.append(model_input.detach().cpu().numpy())
+            index = SUPPORTED_SAMPLE_TYPES.index(sample_type)
+            # one-hot编码
+            y.append(
+                [0] * index + [1] + [0] * (len(SUPPORTED_SAMPLE_TYPES) - index - 1)
+            )
+            bar()
     x = torch.tensor(np.array(x), dtype=torch.float).to(DEVICE)
     y = torch.tensor(np.array(y), dtype=torch.float).to(DEVICE)
     print(x.shape, y.shape)
@@ -133,6 +239,6 @@ def get_dataloader(train_ds, valid_ds):
 if __name__ == "__main__":
     train_ds, valid_ds = generate_dataset()  # 生成数据集
     train_dl, valid_dl = get_dataloader(train_ds, valid_ds)  # 转换为dataloader
-    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
 
     test()

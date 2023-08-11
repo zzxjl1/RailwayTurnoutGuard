@@ -193,6 +193,7 @@ def get_dataloader():
         sample_type=None,
         pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
         series_to_encode=SERIES_TO_ENCODE,
+        no_segmentation=True,
     )
     X = torch.tensor(X, dtype=torch.float, requires_grad=True).to(DEVICE)  # 转换为tensor
     X = X.transpose(1, 2)  # 转换为(batch_size, channels, seq_len)的格式

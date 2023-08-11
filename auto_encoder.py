@@ -160,6 +160,7 @@ def get_dataloader(type):
         sample_type=type,
         pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
         series_to_encode=SERIES_TO_ENCODE,
+        no_segmentation=True,
     )
     DATASET = torch.tensor(temp, dtype=torch.float, requires_grad=True).to(
         DEVICE

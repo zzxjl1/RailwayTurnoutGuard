@@ -156,12 +156,13 @@ def predict(t) -> np.ndarray:
 
 
 def test(type="normal"):
-    t, seg_indexs, _ = generate_dataset(
+    t, _, _ = generate_dataset(
         dataset_length=1,
         time_series_length=TIME_SERIES_LENGTH,
         sample_type=type,
         pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
         series_to_encode=SERIES_TO_ENCODE,
+        no_segmentation=True,
     )
     out = predict(t)
     fig = plt.figure(dpi=150, figsize=(9, 2))

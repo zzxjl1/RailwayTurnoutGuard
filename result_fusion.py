@@ -31,11 +31,11 @@ TRANING_SET_LENGTH = 400  # 训练集长度
 TESTING_SET_LENGTH = 100  # 测试集长度
 DATASET_LENGTH = TRANING_SET_LENGTH + TESTING_SET_LENGTH
 BATCH_SIZE = 64  # 每批处理的数据
-FORCE_CPU = False  # 强制使用CPU
+FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 print("Using device:", DEVICE)
 EPOCHS = 500  # 训练数据集的轮次
-LEARNING_RATE = 5e-3  # 学习率
+LEARNING_RATE = 1e-3  # 学习率
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)
 INPUT_VECTOR_SIZE = 3 * N_CLASSES  # 输入向量大小
 
@@ -139,7 +139,7 @@ class FusedFuzzyDeepNet(nn.Module):
 
 
 model = FusedFuzzyDeepNet(
-    input_vector_size=INPUT_VECTOR_SIZE, fuzz_vector_size=64, num_class=N_CLASSES
+    input_vector_size=INPUT_VECTOR_SIZE, fuzz_vector_size=32, num_class=N_CLASSES
 ).to(
     DEVICE
 )  # FNN模型

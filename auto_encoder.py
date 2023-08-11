@@ -363,7 +363,7 @@ if __name__ == "__main__":
         )  # 归一化
         return d2_confidences
 
-    train_all()
+    # train_all()
 
     matrix = np.zeros((len(SUPPORTED_SAMPLE_TYPES), len(SUPPORTED_SAMPLE_TYPES)))
     test_cycles = 10

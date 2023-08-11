@@ -28,7 +28,7 @@ TRANING_SET_LENGTH = 400  # 训练集长度
 TESTING_SET_LENGTH = 100  # 测试集长度
 DATASET_LENGTH = TRANING_SET_LENGTH + TESTING_SET_LENGTH
 BATCH_SIZE = 64  # 每批处理的数据
-FORCE_CPU = False  # 强制使用CPU
+FORCE_CPU = True  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 print("Using device:", DEVICE)
 EPOCHS = 500  # 训练数据集的轮次
@@ -140,7 +140,9 @@ model = FusedFuzzyDeepNet(
 )  # FNN模型
 
 optimizer = torch.optim.Adam(model.parameters(), lr=LEARNING_RATE)
-loss_func = nn.CrossEntropyLoss()
+weights = torch.ones(N_CLASSES).to(DEVICE)
+weights[0] = 2
+loss_func = nn.CrossEntropyLoss(weight=weights)
 
 
 def model_input_parse(sample, segmentations=None, batch_simulation=True):

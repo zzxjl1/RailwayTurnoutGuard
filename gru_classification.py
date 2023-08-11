@@ -2,6 +2,11 @@ import os
 import random
 from alive_progress import alive_bar
 import numpy as np
+from sklearn.metrics import (
+    ConfusionMatrixDisplay,
+    classification_report,
+    confusion_matrix,
+)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -13,7 +18,11 @@ from sensor import SUPPORTED_SAMPLE_TYPES
 from sensor import generate_dataset, parse_sample, get_sample
 from sensor.config import SAMPLE_RATE
 from gru_score import GRUScore
-from tool_utils import get_label_from_result_pretty, parse_predict_result
+from tool_utils import (
+    get_label_from_result_pretty,
+    parse_predict_result,
+    show_confusion_matrix,
+)
 
 FILE_PATH = "./models/gru_classification.pth"
 TRAINING_SET_LENGTH = 400  # 训练集长度
@@ -246,17 +255,19 @@ def predict(sample, segmentations=None):
 def test():
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
-    correct = 0
-    total = 0
+    y_true = []
+    y_pred = []
     for i, (x, y) in enumerate(test_dl):
         y = y.float().to(DEVICE)
         output = model(x)
-        print(output, y)
         _, predicted = torch.max(output.data, 1)
         _, label = torch.max(y.data, 1)
-        total += y.size(0)
-        correct += (predicted == label).sum().item()
-    print("accu:", correct / total)
+        y_true.extend(label.tolist())
+        y_pred.extend(predicted.tolist())
+    report = classification_report(y_true, y_pred, target_names=SUPPORTED_SAMPLE_TYPES)
+    cm = confusion_matrix(y_true, y_pred)
+    print(report)
+    show_confusion_matrix(cm, SUPPORTED_SAMPLE_TYPES)
 
 
 if __name__ == "__main__":

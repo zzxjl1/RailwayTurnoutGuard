@@ -9,6 +9,10 @@ import pickle
 import math
 import random
 import numpy as np
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+)
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,7 +24,7 @@ from alive_progress import alive_bar
 from sensor import SUPPORTED_SAMPLE_TYPES, get_sample
 from gru_score import GRUScore
 from sensor.real_world import get_all_samples
-from tool_utils import get_label_from_result_pretty, parse_predict_result
+from tool_utils import show_confusion_matrix
 
 FILE_PATH = "./models/mlp_classification.pth"
 BATCH_SIZE = 64  # 每批处理的数据
@@ -178,16 +182,19 @@ def predict(sample, segmentations=None):
 def test():
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
-    correct = 0
-    total = 0
+    y_true = []
+    y_pred = []
     for i, (x, y) in enumerate(valid_dl):
         y = y.float().to(DEVICE)
         output = model(x)
         _, predicted = torch.max(output.data, 1)
         _, label = torch.max(y.data, 1)
-        total += y.size(0)
-        correct += (predicted == label).sum().item()
-    print("accu:", correct / total)
+        y_true.extend(label.tolist())
+        y_pred.extend(predicted.tolist())
+    report = classification_report(y_true, y_pred, target_names=SUPPORTED_SAMPLE_TYPES)
+    cm = confusion_matrix(y_true, y_pred)
+    print(report)
+    show_confusion_matrix(cm, SUPPORTED_SAMPLE_TYPES)
 
 
 if __name__ == "__main__":

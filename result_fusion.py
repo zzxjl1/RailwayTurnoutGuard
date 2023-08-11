@@ -1,4 +1,8 @@
 import os
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+)
 from torch.utils.data import DataLoader
 from torch.utils.data import TensorDataset
 import random
@@ -10,7 +14,7 @@ from segmentation import calc_segmentation_points
 from sensor.config import SUPPORTED_SAMPLE_TYPES
 from sensor.real_world import get_all_samples
 from sensor.simulate import generate_sample
-from tool_utils import get_label_from_result_pretty, parse_predict_result
+from tool_utils import show_confusion_matrix
 import auto_encoder
 import mlp_classification
 import gru_classification
@@ -73,10 +77,8 @@ class FusedFuzzyDeepNet(nn.Module):
         fuzzy_layer_input_dim=1,
         fuzzy_layer_output_dim=1,
         dropout_rate=0.2,
-        device=DEVICE,
     ):
         super(FusedFuzzyDeepNet, self).__init__()
-        self.device = device
         self.input_vector_size = input_vector_size
         self.fuzz_vector_size = fuzz_vector_size
         self.num_class = num_class
@@ -109,7 +111,7 @@ class FusedFuzzyDeepNet(nn.Module):
     def forward(self, input):
         input = self.bn(input)
         fuzz_input = self.fuzz_init_linear_layer(input)
-        fuzz_output = torch.zeros(input.size(), dtype=torch.float, device=self.device)
+        fuzz_output = torch.zeros(input.size(), dtype=torch.float).to(DEVICE)
         for col_idx in range(fuzz_input.size()[1]):
             col_vector = fuzz_input[:, col_idx : col_idx + 1]
             fuzz_col_vector = (
@@ -163,7 +165,7 @@ def model_input_parse(sample, segmentations=None, batch_simulation=True):
 def predict(sample, segmentations=None):
     assert os.path.exists(FILE_PATH), "model file not exists, please train first"
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)
-    model_input = model_input_parse(sample, segmentations)
+    model_input = model_input_parse(sample, segmentations).to(DEVICE)
     model.eval()
     with torch.no_grad():
         output = model(model_input)
@@ -218,16 +220,19 @@ def train():
 def test():
     model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
-    correct = 0
-    total = 0
+    y_true = []
+    y_pred = []
     for i, (x, y) in enumerate(valid_dl):
         y = y.float().to(DEVICE)
         output = model(x)
         _, predicted = torch.max(output.data, 1)
         _, label = torch.max(y.data, 1)
-        total += y.size(0)
-        correct += (predicted == label).sum().item()
-    print("accu:", correct / total)
+        y_true.extend(label.tolist())
+        y_pred.extend(predicted.tolist())
+    report = classification_report(y_true, y_pred, target_names=SUPPORTED_SAMPLE_TYPES)
+    cm = confusion_matrix(y_true, y_pred)
+    print(report)
+    show_confusion_matrix(cm, SUPPORTED_SAMPLE_TYPES)
 
 
 def get_dataloader(train_ds, valid_ds):

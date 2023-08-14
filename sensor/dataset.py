@@ -108,7 +108,9 @@ def generate_dataset_real(
 
         x.append(array_sample)
         seg_indexs.append(seg_index)
-    return shuffle(np.array(x), seg_indexs, types)
+
+    x, seg_indexs, types = shuffle(x, seg_indexs, types)
+    return np.array(x), seg_indexs, types
 
 
 def generate_dataset_fake(

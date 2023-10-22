@@ -3,15 +3,13 @@
 """
 import numpy as np
 
-from sensor.utils import shuffle
-
 
 try:
     from sensor.config import SUPPORTED_SAMPLE_TYPES
-    from sensor.utils import show_sample, interpolate
+    from sensor.utils import show_sample, interpolate, shuffle
 except:
     from config import SUPPORTED_SAMPLE_TYPES
-    from utils import show_sample, interpolate
+    from utils import show_sample, interpolate, shuffle
 import pandas as pd
 from enum import Enum
 

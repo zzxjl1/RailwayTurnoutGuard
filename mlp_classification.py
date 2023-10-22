@@ -108,16 +108,18 @@ def loss_batch(model, loss_func, xb, yb):
 def fit(train_dl, valid_dl):
     for step in range(EPOCHS):  # 训练轮次
         model.train()  # 训练模式
-        for xb, yb in train_dl:
-            loss_batch(model, loss_func, xb, yb)
+        train_losses, train_nums = zip(
+            *[loss_batch(model, loss_func, xb, yb) for xb, yb in train_dl]
+        )
 
         model.eval()  # 验证模式
         with torch.no_grad():
-            losses, nums = zip(
+            val_losses, val_nums = zip(
                 *[loss_batch(model, loss_func, xb, yb) for xb, yb in valid_dl]
             )
-        val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
-        print("当前step:" + str(step), "验证集损失：" + str(val_loss))
+        val_loss = np.sum(np.multiply(val_losses, val_nums)) / np.sum(val_nums)
+        train_loss = np.sum(np.multiply(train_losses, train_nums)) / np.sum(train_nums)
+        print(f"当前step:{step}, 训练集损失:{train_loss}, 验证集损失:{val_loss}")
 
 
 def generate_dataset():

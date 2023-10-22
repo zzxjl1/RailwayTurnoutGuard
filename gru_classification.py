@@ -221,6 +221,7 @@ def get_dataloader():
 
 
 def train():
+    model.train()
     for epoch in range(EPOCHS):  # 训练EPOCHS轮
         for i, (x, y) in enumerate(train_dl):
             y = y.float().to(DEVICE)
@@ -230,7 +231,8 @@ def train():
             l.backward()  # 反向传播
             optimizer.step()  # 更新参数
             print("Epoch: {}, Batch: {}, Loss: {}".format(epoch, i, l.item()))
-    torch.save(model, FILE_PATH)  # 保存模型
+        torch.save(model, FILE_PATH)  # 保存模型
+        test()
 
 
 def predict_raw_input(x):
@@ -257,9 +259,12 @@ def test():
     model.eval()  # 验证模式
     y_true = []
     y_pred = []
+    losses = []
     for i, (x, y) in enumerate(test_dl):
         y = y.float().to(DEVICE)
-        output = model(x)
+        with torch.no_grad():
+            output = model(x)
+            losses.append(loss(output, y))
         _, predicted = torch.max(output.data, 1)
         _, label = torch.max(y.data, 1)
         y_true.extend(label.tolist())
@@ -267,6 +272,7 @@ def test():
     report = classification_report(y_true, y_pred, target_names=SUPPORTED_SAMPLE_TYPES)
     cm = confusion_matrix(y_true, y_pred)
     print(report)
+    print("eval loss:", sum(losses) / len(losses))
     show_confusion_matrix(cm, SUPPORTED_SAMPLE_TYPES)
 
 

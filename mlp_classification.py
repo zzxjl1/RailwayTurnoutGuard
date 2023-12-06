@@ -25,14 +25,18 @@ from sensor import SUPPORTED_SAMPLE_TYPES, get_sample
 from gru_score import GRUScore
 from sensor.real_world import get_all_samples
 from tool_utils import show_confusion_matrix
+from torch.utils.tensorboard import SummaryWriter
+from pytorchtools import EarlyStopping  # Add an EarlyStopping utility
+
+writer = SummaryWriter("./paper/mlp")  # TensorBoard writer
+early_stopping = EarlyStopping(patience=20, verbose=True)
 
 FILE_PATH = "./models/mlp_classification.pth"
-BATCH_SIZE = 64  # 每批处理的数据
+BATCH_SIZE = 128  # 每批处理的数据
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 print("Using device:", DEVICE)
-EPOCHS = 200  # 训练数据集的轮次
-LEARNING_RATE = 1e-3  # 学习率
+LEARNING_RATE = 1e-4  # 学习率
 
 INPUT_VECTOR_SIZE = 1 + 15 * len(SERIES_TO_ENCODE) * 3 - len(IGNORE_LIST)  # 输入向量的大小
 TRANING_SET_LENGTH = 400  # 训练集长度
@@ -106,7 +110,8 @@ def loss_batch(model, loss_func, xb, yb):
 
 
 def fit(train_dl, valid_dl):
-    for step in range(EPOCHS):  # 训练轮次
+    epoch = 0
+    while 1:  # 训练轮次
         model.train()  # 训练模式
         train_losses, train_nums = zip(
             *[loss_batch(model, loss_func, xb, yb) for xb, yb in train_dl]
@@ -119,7 +124,19 @@ def fit(train_dl, valid_dl):
             )
         val_loss = np.sum(np.multiply(val_losses, val_nums)) / np.sum(val_nums)
         train_loss = np.sum(np.multiply(train_losses, train_nums)) / np.sum(train_nums)
-        print(f"当前step:{step}, 训练集损失:{train_loss}, 验证集损失:{val_loss}")
+
+        # Log the training and validation loss to TensorBoard
+        writer.add_scalar("Loss/Train", train_loss, epoch)
+        writer.add_scalar("Loss/Validation", val_loss, epoch)
+
+        print(f"当前epoch:{epoch}, 训练集损失:{train_loss}, 验证集损失:{val_loss}")
+        epoch += 1
+
+        # Add early stopping check
+        early_stopping(val_loss, model)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
 
 
 def generate_dataset():
@@ -202,5 +219,5 @@ def test():
 if __name__ == "__main__":
     train_ds, valid_ds = generate_dataset()  # 生成数据集
     train_dl, valid_dl = get_data(train_ds, valid_ds)  # 转换为dataloader
-    # train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
-    test()  # 测试模型
+    train()  # 训练模型，第一次运行时需要先训练模型，训练完会持久化权重至硬盘请注释掉这行
+    # test()  # 测试模型

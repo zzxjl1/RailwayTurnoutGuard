@@ -24,13 +24,19 @@ from tool_utils import (
     show_confusion_matrix,
 )
 
+from torch.utils.tensorboard import SummaryWriter
+from pytorchtools import EarlyStopping  # Add an EarlyStopping utility
+
+writer = SummaryWriter("./paper/tcn")  # TensorBoard writer
+early_stopping = EarlyStopping(patience=20, verbose=True)
+
+
 FILE_PATH = "./models/gru_classification.pth"
 TRAINING_SET_LENGTH = 400  # 训练集长度
 TESTING_SET_LENGTH = 100  # 测试集长度
 DATASET_LENGTH = TRAINING_SET_LENGTH + TESTING_SET_LENGTH  # 数据集总长度
-EPOCHS = 1000  # 训练数据集的轮次
 LEARNING_RATE = 1e-4  # 学习率
-BATCH_SIZE = 64  # 每批处理的数据
+BATCH_SIZE = 128  # 每批处理的数据
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
 N_CLASSES = len(SUPPORTED_SAMPLE_TYPES)  # 分类数
@@ -222,17 +228,29 @@ def get_dataloader():
 
 def train():
     model.train()
-    for epoch in range(EPOCHS):  # 训练EPOCHS轮
+    epoch = 0
+    train_loss = []
+    while 1:  # 训练EPOCHS轮
         for i, (x, y) in enumerate(train_dl):
             y = y.float().to(DEVICE)
             optimizer.zero_grad()  # 梯度清零
             output = model(x)  # 前向传播
             l = loss(output, y)  # 计算损失
+            train_loss.append(l.item())
             l.backward()  # 反向传播
             optimizer.step()  # 更新参数
             print("Epoch: {}, Batch: {}, Loss: {}".format(epoch, i, l.item()))
-        torch.save(model, FILE_PATH)  # 保存模型
-        test()
+        # torch.save(model, FILE_PATH)  # 保存模型
+        val_loss = test()
+        writer.add_scalar("Loss/Train", sum(train_loss) / len(train_loss), epoch)
+        writer.add_scalar("Loss/Validation", val_loss, epoch)
+        epoch += 1
+
+        # Add early stopping check
+        early_stopping(val_loss, model)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
 
 
 def predict_raw_input(x):
@@ -255,7 +273,7 @@ def predict(sample, segmentations=None):
 
 
 def test():
-    model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
+    # model = torch.load(FILE_PATH, map_location=DEVICE).to(DEVICE)  # 加载模型
     model.eval()  # 验证模式
     y_true = []
     y_pred = []
@@ -269,15 +287,16 @@ def test():
         _, label = torch.max(y.data, 1)
         y_true.extend(label.tolist())
         y_pred.extend(predicted.tolist())
-    report = classification_report(y_true, y_pred, target_names=SUPPORTED_SAMPLE_TYPES)
-    cm = confusion_matrix(y_true, y_pred)
-    print(report)
+    # report = classification_report(y_true, y_pred, target_names=SUPPORTED_SAMPLE_TYPES)
+    # cm = confusion_matrix(y_true, y_pred)
+    # print(report)
     print("eval loss:", sum(losses) / len(losses))
-    show_confusion_matrix(cm, SUPPORTED_SAMPLE_TYPES)
+    # show_confusion_matrix(cm, SUPPORTED_SAMPLE_TYPES)
+    return sum(losses) / len(losses)
 
 
 if __name__ == "__main__":
     train_dl, test_dl = get_dataloader()
-    # train()
+    train()
 
-    test()
+    # test()

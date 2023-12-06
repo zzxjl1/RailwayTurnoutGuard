@@ -20,20 +20,25 @@ from sensor import (
     parse_sample,
 )
 from gru_score import GRUScore
+from torch.utils.tensorboard import SummaryWriter
+from pytorchtools import EarlyStopping  # Add an EarlyStopping utility
+
+writer = SummaryWriter("./paper/ae")  # TensorBoard writer
+early_stopping = EarlyStopping(patience=20, verbose=True)
+
 
 POOLING_FACTOR_PER_TIME_SERIES = 5  # 每条时间序列的降采样因子
 TIME_SERIES_DURATION = 10  # 输入模型的时间序列时长为10s
 TIME_SERIES_LENGTH = SAMPLE_RATE * TIME_SERIES_DURATION  # 时间序列长度
-TRAINING_SET_LENGTH = 35  # 训练集长度
-TESTING_SET_LENGTH = 5  # 测试集长度
+TRAINING_SET_LENGTH = 30  # 训练集长度
+TESTING_SET_LENGTH = 10  # 测试集长度
 SERIES_TO_ENCODE = ["A", "B", "C"]  # 参与训练和预测的序列，power暂时不用
 CHANNELS = len(SERIES_TO_ENCODE)
 TOTAL_LENGTH = TIME_SERIES_LENGTH // POOLING_FACTOR_PER_TIME_SERIES
 
 MODEL_TO_USE = "BP"
-LEARNING_RATE = 1e-3  # 学习率
-BATCH_SIZE = 64  # 批大小
-EPOCHS = 1000  # 训练轮数
+LEARNING_RATE = 1e-4  # 学习率
+BATCH_SIZE = 128  # 批大小
 FILE_PATH = "./models/auto_encoder/"  # 模型保存路径
 FORCE_CPU = False  # 强制使用CPU
 DEVICE = torch.device("cuda" if torch.cuda.is_available() and not FORCE_CPU else "cpu")
@@ -201,25 +206,39 @@ def loss_batch(model, x, is_train):
 
 def train(type="normal"):
     train_dl, test_dl = get_dataloader(type)
-    for epoch in range(EPOCHS):
+    epoch = 0
+    while 1:
         model.train()
-        for i, (x,) in enumerate(train_dl):
-            x = x.to(DEVICE)
-            loss_batch(model, x, is_train=True)
+        train_losses, train_nums = zip(
+            *[loss_batch(model, x.to(DEVICE), is_train=True) for (x,) in train_dl]
+        )
 
         model.eval()
         with torch.no_grad():
             losses, nums = zip(
                 *[loss_batch(model, x, is_train=False) for (x,) in test_dl]
             )
+        train_loss = np.sum(np.multiply(train_losses, train_nums)) / np.sum(train_nums)
         val_loss = np.sum(np.multiply(losses, nums)) / np.sum(nums)
+
+        # Log the training and validation loss to TensorBoard
+        writer.add_scalar("Loss/Train", train_loss, epoch)
+        writer.add_scalar("Loss/Validation", val_loss, epoch)
+
         print(
-            "Epoch [{}/{}], Validation_Loss: {}, Type: {}".format(
-                epoch + 1, EPOCHS, val_loss, type
+            "Epoch: {}, Training_Loss: {}, Validation_Loss: {}, Type: {}".format(
+                epoch + 1, train_loss, val_loss, type
             )
         )
+        epoch += 1
 
-    torch.save(model, f"{FILE_PATH}{type}.pth")  # 保存模型
+        # Add early stopping check
+        early_stopping(val_loss, model)
+        if early_stopping.early_stop:
+            print("Early stopping")
+            break
+
+    # torch.save(model, f"{FILE_PATH}{type}.pth")  # 保存模型
 
 
 def train_all():
@@ -332,6 +351,8 @@ def sigmoid_d(x):
 
 
 if __name__ == "__main__":
+    train("H4")
+    assert 0
     """
     z_s, labels = [], []
     for _ in range(50):

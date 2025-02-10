@@ -9,6 +9,10 @@ from sensor import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES, get_sample
 from scipy.signal import savgol_filter, find_peaks
 import numpy as np
 
+
+plt.rcParams['font.sans-serif'] = ['SimSun']  # 用来正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False     # 用来正常显示负号
+
 SEGMENT_POINT_1_THRESHOLD = 30
 
 
@@ -59,7 +63,7 @@ def find_segmentation_point_1(x, y, threshold=SEGMENT_POINT_1_THRESHOLD):
         print("segmentation point 1 not found")
         return None, None
     if len(peak_idx) < 2:  # 找到的点不够，说明阈值太高，降低阈值再找
-        threshold -= 1  # 降低“自适应阈值”
+        threshold -= 1  # 降低"自适应阈值"
         print("applying adaptive threshhold: ", threshold)
         return find_segmentation_point_1(x, y, threshold)
     # print("peak_point_available: ", np.array(x)[peak_idx])
@@ -126,7 +130,7 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
     _, segmentation_point_2_x = find_segmentation_point_2(
         *d2_result, series, segmentation_point_1_index, gru_score)  # 寻找第二个分段点
     if show_plt:  # debug usage
-        fig = plt.figure(dpi=150, figsize=(9, 4))
+        fig = plt.figure(dpi=150, figsize=(8, 3))
         ax = fig.subplots()
         ax.set_xlim(0, duration)
         ax.set_yticks([])  # 不显示y轴
@@ -135,32 +139,43 @@ def calc_segmentation_points_single_series(series, gru_score, name="", show_plt=
         ax_new.set_xticks([])  # 不显示x轴
         ax_new.pcolormesh(gru_score[:time_to_index(duration)].reshape(
             1, -1), cmap="Reds", alpha=0.7)
-        # ax_new.plot(*model_output_to_xy(gru_score, end_sec=duration), "r")
+        
         ax1 = ax.twinx()  # 生成第二个y轴
         ax2 = ax.twinx()  # 生成第三个y轴
-        # ax2.plot(*d1_result, label="d1")
-        ax2.plot(*d2_result, label="Legacy Scheme", color="red",
+        
+        ax2.plot(*d2_result, label="纯数值差分方案", color="red",
                  linewidth=1, alpha=0.2)
-        ax1.plot(x, y, label="Time Series", color="blue")
-        ax1.set_yticks([])  # 不显示y轴
-        ax2.set_yticks([])  # 不显示y轴
+        ax1.plot(x, y, label="原始电流序列", color="blue")
+        
+        # 设置左右y轴的标签
+        ax1.set_ylabel("电流 (A)")
+        ax2.set_ylabel("二阶差分值")
+
+        # 将ax1移到左边
+        ax1.spines['left'].set_position(('outward', 0))
+        ax1.spines['right'].set_visible(False)
+        ax1.yaxis.set_label_position('left')
+        ax1.yaxis.set_ticks_position('left')
+        
+        
         # 画竖线
         if segmentation_point_1_x is not None:
             plt.axvline(x=segmentation_point_1_x, color='r',
-                        linestyle='--', label="Segmentation Point")
+                       linestyle='--', label="分段点")
         if segmentation_point_2_x is not None:
             plt.axvline(x=segmentation_point_2_x, color='r',
-                        linestyle='--')
-        plt.title(f"Channel {name} Segmentation Result")
+                       linestyle='--')
+                       
         lines, labels = ax1.get_legend_handles_labels()
         lines2, labels2 = ax2.get_legend_handles_labels()
         heatmap_patch = patches.Rectangle(
             (0, 0), 1, 1, fc="r", alpha=0.7)
         plt.legend(lines+[heatmap_patch] + lines2, labels +
-                   ["GRU Score Heatmap"] + labels2, loc='upper right')  # 显示图例
-        ax.set_xlabel("Time(s)")
+                  ["GRU置信度得分热力图"] + labels2, loc='upper right')  # 显示图例
+        ax.set_xlabel("时间 (s)")
         plt.tight_layout()
-        plt.show()
+        #plt.show()
+        plt.savefig("./screenshots/segmentation_result.png",dpi=300)
 
     return segmentation_point_1_x, segmentation_point_2_x
 
@@ -211,50 +226,152 @@ if __name__ == "__main__":
     # sample, segmentations = generate_sample()
     # calc_segmentation_points(sample)
 
-    """
-    import matplotlib.colors as mcolors
-    from sensor.utils import find_nearest
-    from matplotlib.lines import Line2D
+    
+    # import matplotlib.colors as mcolors
+    # from sensor.utils import find_nearest
+    # from matplotlib.lines import Line2D
 
-    plt.figure(figsize=(15, 8), dpi=150)
-    ax = plt.subplot(projection='3d')
-    # 12种颜色
-    colors = ["teal", "purple", "royalblue", "gold", "darkslategrey", "darkviolet",
-              "purple", "olivedrab", "dodgerblue", "slategray", "deepskyblue", "seagreen"]
-    for type_index, type in enumerate(SUPPORTED_SAMPLE_TYPES):
-        sample, segmentations = get_sample(type)
-        pt1, pt2 = segmentations
-        A, B, C = sample["A"], sample["B"], sample["C"]
-        color = colors[type_index]
-        for x, y in [A]:
-            ax.plot(x, y, zs=type_index, zdir='y', c=color)
-            # 标出分段点
-            for pt in [pt1, pt2]:
-                if pt is None:
-                    continue
-                # 获取分段点的索引
-                pt_index = find_nearest(x, pt)
-                ax.scatter(pt, type_index, y[pt_index], c="r", marker="o")
-    ax.set_xlabel("Time(s)")
-    ax.set_ylabel("Sample Type")
-    ax.set_yticklabels(SUPPORTED_SAMPLE_TYPES)
-    ax.set_yticks(range(len(SUPPORTED_SAMPLE_TYPES)))
-    ax.set_zlabel("Current(A)")
-    # Z轴范围
-    ax.set_zlim(0, 6)
-    ax.set_ylim(0, len(SUPPORTED_SAMPLE_TYPES)-1)
-    ax.set_xlim(0, 20)
-    plt.title("Segmentation Points of All Fault Types")
+    # plt.figure(figsize=(15, 8), dpi=150)
+    # ax = plt.subplot(projection='3d')
+    # # 12种颜色
+    # colors = ["teal", "purple", "royalblue", "gold", "darkslategrey", "darkviolet",
+    #           "purple", "olivedrab", "dodgerblue", "slategray", "deepskyblue", "seagreen"]
+    # for type_index, type in enumerate(SUPPORTED_SAMPLE_TYPES):
+    #     sample, segmentations = get_sample(type)
+    #     pt1, pt2 = segmentations
+    #     A, B, C = sample["A"], sample["B"], sample["C"]
+    #     color = colors[type_index]
+    #     for x, y in [A]:
+    #         ax.plot(x, y, zs=type_index, zdir='y', c=color)
+    #         # 标出分段点
+    #         for pt in [pt1, pt2]:
+    #             if pt is None:
+    #                 continue
+    #             # 获取分段点的索引
+    #             pt_index = find_nearest(x, pt)
+    #             ax.scatter(pt, type_index, y[pt_index], c="r", marker="o")
+    # ax.set_xlabel("时间（s）")
+    # ax.set_ylabel("样本标签")
+    # ax.set_yticklabels(SUPPORTED_SAMPLE_TYPES)
+    # ax.set_yticks(range(len(SUPPORTED_SAMPLE_TYPES)))
+    # ax.set_zlabel("电流（A）")
+    # # Z轴范围
+    # ax.set_zlim(0, 6)
+    # ax.set_ylim(0, len(SUPPORTED_SAMPLE_TYPES)-1)
+    # ax.set_xlim(0, 20)
+    # ax.set_xticks(range(0, 21, 2))
+    # plt.title("Segmentation Points of All Fault Types")
+    # plt.tight_layout()
+    # #plt.savefig("./screenshots/Segmentation Points of All Fault Types.png")
+    # plt.show()
+    
+
+    # for type in SUPPORTED_SAMPLE_TYPES:
+    #     sample, segmentations = get_sample(type)
+    #     gru_score = gru_predict_score(model_input_parse(sample))
+    #     print(sample.keys())
+    #     name = "A"
+    #     series = sample[name]
+    #     result = calc_segmentation_points_single_series(
+    #         series, gru_score, name=f"{name} ({type}) ", show_plt=True)
+    #     print("🎁comparison", segmentations, result)
+    #     input()
+
+    """
+    分段电流序列作为先验知识输入，其准确性直接影响下游分类器的性能表现。然而，只基于二阶差分的分段点检测算法在处理由故障和环境电磁干扰引起的波动信号时存在明显局限性。如图3-7所示，在H4故障样本中，由于开关电路接触不良导致第二阶段电流发生突变，二阶差分最大值的方法错误地识别了分段点 P_2。
+    """
+    
+    """
+    展示H4故障样本中P2识别错误的问题
+    """
+    sample, segmentations = get_sample("H4")
+    
+    # 获取A相电流数据
+    series = sample["A"]
+    x, y = series
+    duration = x[-1]
+    
+    # 计算二阶导数
+    d1_result = get_d(series, smooth=True)
+    d2_x, d2_y = get_d(d1_result, smooth=True)
+    
+    # 创建图形
+    fig = plt.figure(dpi=150, figsize=(7, 3))
+    
+    # 创建两个y轴共用一个x轴的图
+    ax1 = plt.gca()
+    ax2 = ax1.twinx()
+    
+    # 绘制原始电流
+    line1 = ax1.plot(x, y, 'b-', label='原始电流序列', linewidth=2)
+    ax1.set_ylabel('电流 (A)', color='b')
+    ax1.tick_params(axis='y', labelcolor='b')
+    
+    # 绘制二阶导数
+    line2 = ax2.plot(d2_x, d2_y, 'r-', label='二阶差分序列', linewidth=1, alpha=0.7)
+    ax2.set_ylabel('二阶差分值', color='r')
+    ax2.tick_params(axis='y', labelcolor='r')
+    
+    # 找出所有峰值点
+    peak_idx, properties = find_peaks(d2_y, prominence=0)  # 使用prominence而不是height来找到所有峰值
+    prominences = properties["prominences"]
+    
+    # 标注真实分段点
+    real_pt1, real_pt2 = segmentations
+    if real_pt1:
+        ax1.axvline(x=real_pt1, color='g', linestyle='--', label='真实分段点P₁')
+    
+    # 找出P₁之后且在转换阶段内的峰值点
+    later_peaks = [p for p in peak_idx if real_pt1 + 0.1 < d2_x[p] < real_pt2]
+    if later_peaks:
+        # 找到最大峰值（错误识别的P₂）
+        wrong_p2_idx = later_peaks[np.argmax([d2_y[p] for p in later_peaks])]
+        ax2.scatter(d2_x[wrong_p2_idx], d2_y[wrong_p2_idx], 
+                   color='red', s=100, marker='*', label='错误识别的P2')
+        
+    if real_pt2:
+        ax1.axvline(x=real_pt2, color='g', linestyle='--', label='真实分段点')
+
+    # 标注其他峰值点（只标注转换阶段内的峰值点）
+    other_peaks = [p for p in later_peaks if p != wrong_p2_idx]
+    if other_peaks:
+        ax2.scatter(np.array(d2_x)[other_peaks], np.array(d2_y)[other_peaks], 
+                   color='gray', s=50, alpha=0.5, label='候选峰值点')
+    
+    # 添加波动区域的阴影
+    if real_pt1 and real_pt2:
+        ax1.axvspan(real_pt1, real_pt2, color='yellow', alpha=0.1, label='转换阶段')
+    
+    # 设置x轴标签和范围
+    ax1.set_xlabel('时间 (s)')
+    ax1.set_xlim(0, duration)
+    
+    # 添加网格
+    ax1.grid(True, linestyle='--', alpha=0.3)
+    
+    # 合并图例
+    lines = line1 + line2
+    labels = [l.get_label() for l in lines]
+    
+    # 添加散点图例
+    scatter_legend = [
+        plt.Line2D([0], [0], marker='*', color='w', markerfacecolor='red', 
+                   markersize=12, label=r'错误识别的$P_{2}$'),
+        plt.Line2D([0], [0], marker='o', color='w', markerfacecolor='gray', 
+                   markersize=8, alpha=0.5, label='候选峰值点'),
+        plt.Line2D([0], [0], color='g', linestyle='--', label='真实分段点'),
+    ]
+    
+    # 合并所有图例
+    plt.legend(lines + scatter_legend, 
+              labels + [l.get_label() for l in scatter_legend], 
+              loc='upper right',
+              framealpha=1,  # 设置图例背景不透明
+              )     # 确保图例在最上层
+
+    # 调整布局
     plt.tight_layout()
+    
+    # 保存图片
+    plt.savefig("./screenshots/segmentation_p2_error_analysis.png", dpi=300, bbox_inches='tight')
     plt.show()
-    """
-
-    for type in SUPPORTED_SAMPLE_TYPES:
-        sample, segmentations = get_sample(type)
-        gru_score = gru_predict_score(model_input_parse(sample))
-        print(sample.keys())
-        name = "A"
-        series = sample[name]
-        result = calc_segmentation_points_single_series(
-            series, gru_score, name=f"{name} ({type}) ", show_plt=True)
-        print("🎁comparison", segmentations, result)

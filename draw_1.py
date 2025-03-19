@@ -35,8 +35,7 @@ def plot_samples():
             time, current = sample[phase]
             ax.plot(time, current, label=f'{phase} 相')
         
-        # 设置子图标题和标签
-        ax.set_title(f'样本类型: {sample_type}')
+        # 设置子图标签
         ax.set_xlabel('时间 (s)')
         ax.set_ylabel('电流 (A)')
         ax.legend(loc='upper right')  # 强制legend在右上角
@@ -46,9 +45,19 @@ def plot_samples():
         ax.set_xlim(left=0)
         ax.set_ylim(bottom=0, top=5)  # y轴从0开始
         ax.yaxis.set_major_locator(plt.MultipleLocator(1))  # 设置y轴刻度间隔为1
+        
+        # 在x轴标签下方添加子图标题，位置下移并添加标号
+        subplot_label = chr(97 + i) # 将0,1,2...转换为a,b,c...
+        ax.text(0.47, -0.5, f'({subplot_label}) {sample_type}类型样本', 
+                horizontalalignment='center', 
+                transform=ax.transAxes,
+                fontsize=10)
     
     # 调整子图之间的间距
     plt.tight_layout()
+    
+    # 进一步调整子图间距，减小上下间距
+    plt.subplots_adjust(hspace=0.7)  # 减小垂直间距
     
     # 保存图片
     plt.savefig('samples.png', dpi=300, bbox_inches='tight')

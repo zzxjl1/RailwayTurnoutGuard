@@ -15,6 +15,9 @@ from sensor.config import SAMPLE_RATE, SUPPORTED_SAMPLE_TYPES
 from sensor.dataset import generate_dataset
 from sensor.utils import find_nearest
 
+plt.rcParams['font.sans-serif'] = ['SimHei']  # 用来正常显示中文标签
+plt.rcParams['axes.unicode_minus'] = False  # 用来正常显示负号
+
 FILE_PATH = "./models/gru_score.pth"
 DATASET_LENGTH = 100  # 数据集总长度
 TIME_SERIES_DURATION = 20  # 20s
@@ -153,11 +156,9 @@ def test(type="normal"):
                                         pooling_factor_per_time_series=POOLING_FACTOR_PER_TIME_SERIES,
                                         series_to_encode=SERIES_TO_ENCODE)
     out = predict(t)
-    fig = plt.figure(dpi=150, figsize=(9, 2))
+    fig = plt.figure(dpi=150, figsize=(6, 3))
     ax1 = fig.subplots()
     ax2 = ax1.twinx()
-    #ax2.plot(out.squeeze(), label="score")
-    # 热度图
     ax1.pcolormesh(out.reshape(1, -1), cmap="Reds", alpha=0.8)
     sample = t.squeeze()
     for i in range(len(SERIES_TO_ENCODE)):
@@ -168,6 +169,19 @@ def test(type="normal"):
     plt.title("Segmentation GRU Score Heatmap - type: {}".format(type))
     ax1.set_yticks([])  # 不显示y轴
     ax2.yaxis.tick_left()  # ax2在左边
+    
+    # 添加x轴和y轴标签
+    ax1.set_xlabel('时间 (秒)')
+    ax1.set_ylabel('电流强度 (A)', labelpad=20)  # 添加padding避免重叠
+    ax2.set_ylabel('')  # 清除ax2的y轴标签
+    
+    # 设置x轴刻度为实际时间
+    x_ticks = np.linspace(0, len(out), 5)  # 5个刻度点
+    x_labels = ['{:.0f}'.format(x * TIME_SERIES_DURATION / len(out)) for x in x_ticks]
+    ax1.set_xticks(x_ticks)
+    ax1.set_xticklabels(x_labels)
+    plt.tight_layout()
+    
     plt.show()
 
 
@@ -205,6 +219,6 @@ def model_input_parse(sample):
 
 
 if __name__ == "__main__":
-    train()
+    #train()
     for type in SUPPORTED_SAMPLE_TYPES:
         test(type)
